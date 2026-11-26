@@ -1,0 +1,6 @@
+{
+  "name": "WindowsNotch Pro",
+  "description": "AI-powered Windows 10 & 11 Dynamic Island desktop assistant with 2FA voice unlock, sandboxed folder and app automation, autonomous mouse control, 5-turn sliding-window memory, and complete native Windows source package.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

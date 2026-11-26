@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Public Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  html,
+  body {
+    font-family: var(--font-sans);
+    background-color: #0b0e14;
+    color: #f1f5f9;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  .font-display {
+    font-family: var(--font-display);
+  }
+}
+
+/* Precision Optical AI Iris Animations */
+@keyframes iris-breathe {
+  0%,
+  100% {
+    transform: scale(0.96);
+    opacity: 0.88;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+
+@keyframes iris-orbit {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes eq-bar {
+  0%,
+  100% {
+    transform: scaleY(0.32);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.iris-breathe {
+  animation: iris-breathe 3.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.iris-orbit {
+  animation: iris-orbit 9s linear infinite;
+}
+
+.iris-orbit-fast {
+  animation: iris-orbit 2.4s linear infinite;
+}
+
+.eq-bar-1 {
+  animation: eq-bar 0.85s ease-in-out infinite;
+}
+.eq-bar-2 {
+  animation: eq-bar 0.65s ease-in-out 0.18s infinite;
+}
+.eq-bar-3 {
+  animation: eq-bar 0.95s ease-in-out 0.34s infinite;
+}
+
+/* Machined Obsidian Glass Shell */
+.notch-obsidian-shell {
+  background: linear-gradient(
+    180deg,
+    rgba(18, 22, 31, 0.92) 0%,
+    rgba(9, 11, 16, 0.96) 100%
+  );
+  box-shadow:
+    0 24px 56px -12px rgba(0, 0, 0, 0.78),
+    0 8px 20px -6px rgba(0, 0, 0, 0.52),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.04);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .iris-breathe,
+  .iris-orbit,
+  .iris-orbit-fast,
+  .eq-bar-1,
+  .eq-bar-2,
+  .eq-bar-3 {
+    animation: none;
+  }
+}
+
+/* Crisp custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.36);
+}
