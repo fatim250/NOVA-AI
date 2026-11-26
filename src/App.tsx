@@ -29,6 +29,7 @@ import { AuditLogView } from "./components/AuditLogView";
 import { SourceCodeView, downloadWindowsNotchZip } from "./components/SourceCodeView";
 import { SecurityVaultModal } from "./components/SecurityVaultModal";
 import type { LiveVoiceStatus, OrbState } from "./components/DynamicNotch";
+import type { NotchSubView } from "./components/NotchBentoSubViews";
 import { LiveVoiceSession } from "./utils/liveVoiceClient";
 import {
   cosineSimilarity,
@@ -145,10 +146,11 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("desktop");
   const [vaultModalOpen, setVaultModalOpen] = useState(false);
 
-  // Assistant Identity (nameless by default until user assigns a name) & UI State
-  const [assistantName, setAssistantName] = useState("");
+  // Assistant Identity (defaults to NOVA; user can rename or clear anytime) & Bento UI State
+  const [assistantName, setAssistantName] = useState("NOVA");
   const [focusedAppId, setFocusedAppId] = useState<string | null>(null);
   const [notchExpanded, setNotchExpanded] = useState(false);
+  const [activeNotchView, setActiveNotchView] = useState<NotchSubView>("bento");
   const [orbState, setOrbState] = useState<OrbState>("idle");
   const [liveStatus, setLiveStatus] = useState<LiveVoiceStatus>("disconnected");
   const [liveInputTranscript, setLiveInputTranscript] = useState("");
@@ -561,6 +563,85 @@ export default function App() {
     setCurrentTrack(null);
     appendAudit("system", "notch_song_stop", "allowed", "Stopped in-Notch audio playback");
   }, [appendAudit]);
+
+  const handleNextTrack = useCallback(() => {
+    if (songResults.length === 0) return;
+    const idx = currentTrack ? songResults.findIndex((t) => t.id === currentTrack.id) : -1;
+    const next = songResults[(idx + 1) % songResults.length];
+    if (next) void playTrackInNotch(next);
+  }, [songResults, currentTrack, playTrackInNotch]);
+
+  const handlePrevTrack = useCallback(() => {
+    if (songResults.length === 0) return;
+    const idx = currentTrack ? songResults.findIndex((t) => t.id === currentTrack.id) : 0;
+    const prev = songResults[(idx - 1 + songResults.length) % songResults.length];
+    if (prev) void playTrackInNotch(prev);
+  }, [songResults, currentTrack, playTrackInNotch]);
+
+  const handleSearchSongsDirect = useCallback(
+    async (query: string) => {
+      try {
+        const res = await fetch(`/api/music/search?q=${encodeURIComponent(query)}`);
+        const data = await res.json();
+        const tracks: SongTrack[] = Array.isArray(data?.tracks) ? data.tracks : [];
+        setSongResults(tracks);
+        if (tracks.length > 0) {
+          await playTrackInNotch(tracks[0]);
+          setLastReply(`Playing ${tracks[0].title} by ${tracks[0].artist} in NOVA Media.`);
+          await appendAudit("system", "notch_song_search", "allowed", `Direct search "${query}" -> ${tracks[0].title}`);
+        }
+      } catch {
+        setLastError("Could not reach song catalog right now.");
+      }
+    },
+    [playTrackInNotch, appendAudit]
+  );
+
+  const handleToggleKeepAwake = useCallback(() => {
+    setIsPatrolling((prev) => {
+      const next = !prev;
+      const msg = next
+        ? "Coffee Keep-Awake enabled — autonomous mouse patrol active."
+        : "Coffee Keep-Awake disabled — mouse patrol stopped.";
+      setLastReply(msg);
+      appendAudit("mouse", next ? "coffee_keep_awake_on" : "coffee_keep_awake_off", "allowed", msg);
+      return next;
+    });
+  }, [appendAudit]);
+
+  const handleToggleAirMouse = useCallback(() => {
+    setAirMouseEnabled((prev) => {
+      const next = !prev;
+      const msg = next ? "MediaPipe Air-Mouse enabled." : "MediaPipe Air-Mouse disabled.";
+      setLastReply(msg);
+      appendAudit("mouse", next ? "air_mouse_enabled" : "air_mouse_disabled", "allowed", msg);
+      return next;
+    });
+  }, [appendAudit]);
+
+  const handleOpenAppWindow = useCallback(
+    (appId: string) => {
+      const target = apps.find((a) => a.id === appId);
+      if (!target) return;
+      setApps((prev) => prev.map((a) => (a.id === appId ? { ...a, isOpen: true } : a)));
+      if (appId === "chrome" || appId === "edge") {
+        setFocusedAppId(appId);
+        setNotchExpanded(false);
+      }
+      appendAudit("app", "app_open", "allowed", `Launched ${target.processName} from System Monitor`);
+    },
+    [apps, appendAudit]
+  );
+
+  const handleAttemptProtectedProcess = useCallback(
+    (procName: string) => {
+      const msg = `Blocked: ${procName} is a protected critical Windows process and cannot be terminated.`;
+      setLastReply(msg);
+      appendAudit("app", "app_close_protected", "blocked", msg);
+      speakTalkBack(msg);
+    },
+    [appendAudit, speakTalkBack]
+  );
 
   const handleNavigateChrome = useCallback(
     (queryOrUrl: string) => {
@@ -1212,6 +1293,7 @@ export default function App() {
       if (!clean) return;
       lastPromptRef.current = clean;
       setActiveTab("desktop");
+      setActiveNotchView("ai");
       setNotchExpanded(true);
       setInputValue("");
       setLastError(null);
@@ -1294,6 +1376,7 @@ export default function App() {
     }
 
     setActiveTab("desktop");
+    setActiveNotchView("ai");
     setNotchExpanded(true);
     setLastError(null);
     setRetryableError(false);
@@ -1556,6 +1639,8 @@ export default function App() {
                 }
               }}
               notchExpanded={notchExpanded}
+              activeNotchView={activeNotchView}
+              onChangeNotchView={setActiveNotchView}
               onToggleNotch={(next) =>
                 setNotchExpanded((prev) => (typeof next === "boolean" ? next : !prev))
               }
@@ -1580,20 +1665,24 @@ export default function App() {
               songResults={songResults}
               onPlayTrack={(track) => {
                 playTrackInNotch(track);
-                setLastReply(`Playing ${track.title} by ${track.artist} in the Notch.`);
+                setLastReply(`Playing ${track.title} by ${track.artist} in NOVA Media.`);
                 recordToMemory(`Play ${track.title}`, "song_play", `Playing ${track.title}`, "executed", {
                   target: `${track.title} — ${track.artist}`,
                 });
               }}
               onTogglePlayPause={handleTogglePlayPause}
               onStopTrack={handleStopTrack}
+              onNextTrack={handleNextTrack}
+              onPrevTrack={handlePrevTrack}
+              onSearchSongsDirect={handleSearchSongsDirect}
               isLocked={isLocked}
               onLockWorkstation={() => {
                 setIsPatrolling(false);
                 setAirMouseEnabled(false);
                 setIsLocked(true);
                 setOrbState("locked");
-                appendAudit("security", "lock_workstation", "allowed", "Taskbar LockWorkStation()");
+                setActiveNotchView("bento");
+                appendAudit("security", "lock_workstation", "allowed", "LockWorkStation() invoked");
               }}
               onAttempt2FAUnlock={handleAttempt2FAUnlock}
               vault={vault}
@@ -1621,6 +1710,7 @@ export default function App() {
                 );
               }}
               apps={apps}
+              onOpenAppWindow={handleOpenAppWindow}
               onCloseAppWindow={(appId) => {
                 const app = apps.find((a) => a.id === appId);
                 setApps((prev) => prev.map((a) => (a.id === appId ? { ...a, isOpen: false } : a)));
@@ -1629,11 +1719,14 @@ export default function App() {
                   appendAudit("app", "app_close", "allowed", `Closed ${app.processName} via window`);
                 }
               }}
+              onAttemptProtectedProcess={handleAttemptProtectedProcess}
               onNavigateChrome={handleNavigateChrome}
               cursorPos={cursorPos}
               clickRipple={clickRipple}
               isPatrolling={isPatrolling}
+              onToggleKeepAwake={handleToggleKeepAwake}
               airMouseEnabled={airMouseEnabled}
+              onToggleAirMouse={handleToggleAirMouse}
               volume={volume}
               onEmergencyStop={handleEmergencyStop}
               onTriggerGesture={handleTriggerGesture}

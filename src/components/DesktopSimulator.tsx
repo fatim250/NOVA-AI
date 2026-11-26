@@ -27,6 +27,7 @@ import type {
   VirtualFolder,
 } from "../types/notch";
 import { DynamicNotch, type LiveVoiceStatus, type OrbState } from "./DynamicNotch";
+import type { NotchSubView } from "./NotchBentoSubViews";
 import { ALLOWED_SANDBOX_ROOTS } from "../utils/sandboxEngine";
 
 const DESKTOP_WALLPAPER = "/src/assets/images/windows_desktop_wallpaper_1795684537296.jpg";
@@ -37,6 +38,8 @@ interface DesktopSimulatorProps {
   focusedAppId: string | null;
   onFocusApp: (appId: string | null) => void;
   notchExpanded: boolean;
+  activeNotchView: NotchSubView;
+  onChangeNotchView: (view: NotchSubView) => void;
   onToggleNotch: (next?: boolean) => void;
   orbState: OrbState;
   liveStatus: LiveVoiceStatus;
@@ -60,6 +63,9 @@ interface DesktopSimulatorProps {
   onPlayTrack: (track: SongTrack) => void;
   onTogglePlayPause: () => void;
   onStopTrack: () => void;
+  onNextTrack: () => void;
+  onPrevTrack: () => void;
+  onSearchSongsDirect: (query: string) => Promise<void>;
   isLocked: boolean;
   onLockWorkstation: () => void;
   onAttempt2FAUnlock: (passphrase: string, speakerMode: "owner" | "impostor") => Promise<{
@@ -72,12 +78,16 @@ interface DesktopSimulatorProps {
   recycledFolders: RecycledFolder[];
   onRestoreRecycled: (id: string) => void;
   apps: DesktopApp[];
+  onOpenAppWindow: (appId: string) => void;
   onCloseAppWindow: (appId: string) => void;
+  onAttemptProtectedProcess: (procName: string) => void;
   onNavigateChrome: (queryOrUrl: string) => void;
   cursorPos: { x: number; y: number };
   clickRipple: { x: number; y: number; id: number } | null;
   isPatrolling: boolean;
+  onToggleKeepAwake: () => void;
   airMouseEnabled: boolean;
+  onToggleAirMouse: () => void;
   volume: number;
   onEmergencyStop: () => void;
   onTriggerGesture: (gesture: "Pointing_Up" | "Closed_Fist" | "Thumb_Up" | "Thumb_Down") => void;
@@ -89,6 +99,8 @@ export const DesktopSimulator: React.FC<DesktopSimulatorProps> = ({
   focusedAppId,
   onFocusApp,
   notchExpanded,
+  activeNotchView,
+  onChangeNotchView,
   onToggleNotch,
   orbState,
   liveStatus,
@@ -112,6 +124,9 @@ export const DesktopSimulator: React.FC<DesktopSimulatorProps> = ({
   onPlayTrack,
   onTogglePlayPause,
   onStopTrack,
+  onNextTrack,
+  onPrevTrack,
+  onSearchSongsDirect,
   isLocked,
   onLockWorkstation,
   onAttempt2FAUnlock,
@@ -120,12 +135,16 @@ export const DesktopSimulator: React.FC<DesktopSimulatorProps> = ({
   recycledFolders,
   onRestoreRecycled,
   apps,
+  onOpenAppWindow,
   onCloseAppWindow,
+  onAttemptProtectedProcess,
   onNavigateChrome,
   cursorPos,
   clickRipple,
   isPatrolling,
+  onToggleKeepAwake,
   airMouseEnabled,
+  onToggleAirMouse,
   volume,
   onEmergencyStop,
   onTriggerGesture,
@@ -227,6 +246,8 @@ export const DesktopSimulator: React.FC<DesktopSimulatorProps> = ({
           assistantName={assistantName}
           browserAutoHide={isBrowserFocused}
           expanded={notchExpanded}
+          activeView={activeNotchView}
+          onChangeView={onChangeNotchView}
           onToggleExpanded={onToggleNotch}
           orbState={orbState}
           liveStatus={liveStatus}
@@ -251,6 +272,21 @@ export const DesktopSimulator: React.FC<DesktopSimulatorProps> = ({
           onPlayTrack={onPlayTrack}
           onTogglePlayPause={onTogglePlayPause}
           onStopTrack={onStopTrack}
+          onNextTrack={onNextTrack}
+          onPrevTrack={onPrevTrack}
+          onSearchSongsDirect={onSearchSongsDirect}
+          isPatrolling={isPatrolling}
+          onToggleKeepAwake={onToggleKeepAwake}
+          airMouseEnabled={airMouseEnabled}
+          onToggleAirMouse={onToggleAirMouse}
+          apps={apps}
+          folders={folders}
+          vault={vault}
+          onOpenAppWindow={onOpenAppWindow}
+          onCloseAppWindow={onCloseAppWindow}
+          onAttemptProtectedProcess={onAttemptProtectedProcess}
+          onOpenVault={onOpenVault}
+          onLockWorkstation={onLockWorkstation}
         />
 
         {/* UNLOCKED WINDOWS 11 DESKTOP LAYER */}
