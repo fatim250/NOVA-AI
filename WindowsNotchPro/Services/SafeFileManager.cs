@@ -2,12 +2,34 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Microsoft.VisualBasic.FileIO;
+using System.Runtime.InteropServices;
 
 namespace WindowsNotchPro.Services;
 
 public sealed class SafeFileManager
 {
+    private const uint FoDelete = 0x0003;
+    private const ushort FofSilent = 0x0004;
+    private const ushort FofNoConfirmation = 0x0010;
+    private const ushort FofAllowUndo = 0x0040;
+    private const ushort FofNoErrorUi = 0x0400;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct ShFileOpStruct
+    {
+        public IntPtr hwnd;
+        public uint wFunc;
+        public string pFrom;
+        public string? pTo;
+        public ushort fFlags;
+        [MarshalAs(UnmanagedType.Bool)]
+        public bool fAnyOperationsAborted;
+        public IntPtr hNameMappings;
+        public string? lpszProgressTitle;
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SHFileOperationW(ref ShFileOpStruct lpFileOp);
     private readonly AuditLogger _audit;
     private readonly Dictionary<string, string> _allowedRoots;
 
@@ -108,11 +130,20 @@ public sealed class SafeFileManager
             return (false, symlinkErr);
         }
 
-        // Soft-delete strictly to Windows Recycle Bin (never permanent Directory.Delete)
-        FileSystem.DeleteDirectory(
-            check.FullPath,
-            UIOption.OnlyErrorDialogs,
-            RecycleOption.SendToRecycleBin);
+        // Soft-delete strictly to Windows Recycle Bin via Win32 SHFileOperationW (never permanent delete)
+        var op = new ShFileOpStruct
+        {
+            wFunc = FoDelete,
+            pFrom = check.FullPath + "\0\0",
+            fFlags = FofAllowUndo | FofNoConfirmation | FofSilent | FofNoErrorUi,
+        };
+        int rc = SHFileOperationW(ref op);
+        if (rc != 0 || op.fAnyOperationsAborted)
+        {
+            var err = $"Could not move '{check.CleanName}' to the Recycle Bin (Win32 code {rc}).";
+            _audit.Log("folder", "folder_soft_delete", "warning", err);
+            return (false, err);
+        }
 
         _audit.Log("folder", "folder_soft_delete", "allowed", $"Recycle Bin <- {check.NormalizedRoot}\\{check.CleanName}");
         return (true, $"Moved '{check.CleanName}' from {check.NormalizedRoot} to the Recycle Bin.");

@@ -46,10 +46,10 @@ if errorlevel 1 (
 )
 dotnet --version
 
-:: 3. Publish standalone win-x64 WPF executable
+:: 3. Build WindowsNotchPro.exe using local .NET 8 SDK (zero NuGet downloads required)
 echo.
-echo [3/3] Publishing self-contained WindowsNotchPro.exe (win-x64) ...
-dotnet publish WindowsNotchPro.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist
+echo [3/3] Building WindowsNotchPro.exe (win-x64, offline-safe) ...
+dotnet publish WindowsNotchPro.csproj -c Release -o dist --nologo
 if errorlevel 1 goto :build_failed
 
 if exist native\NotchNative.dll (

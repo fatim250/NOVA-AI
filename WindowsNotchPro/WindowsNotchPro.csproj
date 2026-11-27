@@ -13,22 +13,10 @@
     <Version>2.0.0</Version>
     <Company>NOVA Systems</Company>
     <Product>NOVA / WindowsNotch Pro</Product>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <SelfContained>true</SelfContained>
-    <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Windows Speech Recognition & Text-to-Speech Talk-Back -->
-    <PackageReference Include="System.Speech" Version="8.0.0" />
-    <!-- Managed Windows DPAPI fallback when NotchNative.dll is not pre-built -->
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Bundle compiled native C Win32 engine beside the executable -->
+    <!-- Bundle compiled native C Win32 engine beside the executable when built -->
     <None Include="native\NotchNative.dll" Condition="Exists('native\NotchNative.dll')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>

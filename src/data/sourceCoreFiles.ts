@@ -22,22 +22,10 @@ export const SOURCE_CORE_FILES: SourceFileEntry[] = [
     <Version>2.0.0</Version>
     <Company>NOVA Systems</Company>
     <Product>NOVA / WindowsNotch Pro</Product>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <SelfContained>true</SelfContained>
-    <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Windows Speech Recognition & Text-to-Speech Talk-Back -->
-    <PackageReference Include="System.Speech" Version="8.0.0" />
-    <!-- Managed Windows DPAPI fallback when NotchNative.dll is not pre-built -->
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Bundle compiled native C Win32 engine beside the executable -->
+    <!-- Bundle compiled native C Win32 engine beside the executable when built -->
     <None Include="native\NotchNative.dll" Condition="Exists('native\NotchNative.dll')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
@@ -46,6 +34,21 @@ export const SOURCE_CORE_FILES: SourceFileEntry[] = [
   </ItemGroup>
 
 </Project>
+`,
+  },
+  {
+    path: "nuget.config",
+    group: "WPF Desktop Overlay (.NET 8)",
+    language: "xml",
+    summary:
+      "Ensures nuget.org is configured if optional packages or self-contained publishing are ever added.",
+    content: String.raw`<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+</configuration>
 `,
   },
   {
@@ -527,8 +530,8 @@ public partial class App : Application
     summary:
       "Top-center DPI-aware anchoring, smooth pill-to-Bento animation, auto-cycling aurora colors, two-way System.Speech voice talk-back, and local Companion Server wiring.",
     content: String.raw`using System;
-using System.Speech.Recognition;
-using System.Speech.Synthesis;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -548,6 +551,7 @@ public partial class MainWindow : Window
     private const double ExpandedWidth = 640;
     private const double ExpandedHeight = 296;
     private const int WmDpiChanged = 0x02E0;
+    private const int SapiSpeakAsyncPurge = 3; // SVSFlagsAsync (1) | SVSFPurgeBeforeSpeak (2)
 
     private readonly SafeFileManager _fileManager;
     private readonly SafeAppManager _appManager;
@@ -555,8 +559,8 @@ public partial class MainWindow : Window
     private readonly CommandParser _commandParser;
     private readonly CompanionServer _companionServer;
 
-    private readonly SpeechSynthesizer _synthesizer = new();
-    private SpeechRecognitionEngine? _speechRecognizer;
+    private object? _sapiVoice;
+    private Type? _sapiVoiceType;
     private bool _isListening;
     private bool _ttsMuted;
     private bool _isExpanded;
@@ -570,6 +574,9 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _focusTimer = new();
     private int _focusSecondsRemaining = 25 * 60;
     private bool _focusRunning;
+
+    [DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
 
     private static readonly (Color Primary, Color Secondary)[] AuroraThemes =
     {
@@ -609,7 +616,6 @@ public partial class MainWindow : Window
         source?.AddHook(WndProc);
 
         AnchorTopCenter(CollapsedWidth);
-        InitializeSpeechRecognition();
 
         // Start loopback-only token-authenticated companion server for Kotlin client
         _companionServer.OnCommandExecuted += reply =>
@@ -633,8 +639,11 @@ public partial class MainWindow : Window
     {
         StopKeepAwakePatrol();
         _companionServer.Dispose();
-        _speechRecognizer?.Dispose();
-        _synthesizer.Dispose();
+        if (_sapiVoice is not null)
+        {
+            Marshal.FinalReleaseComObject(_sapiVoice);
+            _sapiVoice = null;
+        }
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -657,40 +666,21 @@ public partial class MainWindow : Window
     {
         try
         {
-            _synthesizer.SetOutputToDefaultAudioDevice();
-            _synthesizer.Rate = 1;
-            _synthesizer.Volume = 95;
+            // Uses built-in Windows SAPI 5 COM speech engine (zero external NuGet packages required)
+            _sapiVoiceType = Type.GetTypeFromProgID("SAPI.SpVoice");
+            if (_sapiVoiceType is not null)
+            {
+                _sapiVoice = Activator.CreateInstance(_sapiVoiceType);
+                if (_sapiVoice is not null)
+                {
+                    _sapiVoiceType.InvokeMember("Rate", BindingFlags.SetProperty, null, _sapiVoice, new object[] { 1 });
+                    _sapiVoiceType.InvokeMember("Volume", BindingFlags.SetProperty, null, _sapiVoice, new object[] { 95 });
+                }
+            }
         }
         catch (Exception ex)
         {
             AuditLogger.Instance.Log("system", "tts_init_warning", "warning", ex.Message);
-        }
-    }
-
-    private void InitializeSpeechRecognition()
-    {
-        try
-        {
-            _speechRecognizer = new SpeechRecognitionEngine();
-            _speechRecognizer.LoadGrammar(new DictationGrammar());
-            _speechRecognizer.SetInputToDefaultAudioDevice();
-            _speechRecognizer.SpeechRecognized += async (_, args) =>
-            {
-                if (args.Result.Confidence < 0.45f) return;
-                var spoken = args.Result.Text.Trim();
-                if (string.IsNullOrEmpty(spoken)) return;
-
-                await Dispatcher.InvokeAsync(async () =>
-                {
-                    CommandInputBox.Text = spoken;
-                    await ExecuteUserPromptAsync(spoken);
-                });
-            };
-        }
-        catch (Exception ex)
-        {
-            _speechRecognizer = null;
-            AuditLogger.Instance.Log("system", "stt_unavailable", "info", ex.Message);
         }
     }
 
@@ -769,11 +759,15 @@ public partial class MainWindow : Window
 
     private void SpeakReply(string reply)
     {
-        if (_ttsMuted || string.IsNullOrWhiteSpace(reply)) return;
+        if (_ttsMuted || string.IsNullOrWhiteSpace(reply) || _sapiVoice is null || _sapiVoiceType is null) return;
         try
         {
-            _synthesizer.SpeakAsyncCancelAll();
-            _synthesizer.SpeakAsync(reply);
+            _sapiVoiceType.InvokeMember(
+                "Speak",
+                BindingFlags.InvokeMethod,
+                null,
+                _sapiVoice,
+                new object[] { reply, SapiSpeakAsyncPurge });
         }
         catch
         {
@@ -887,28 +881,27 @@ public partial class MainWindow : Window
 
     private void VoiceListen_Click(object sender, RoutedEventArgs e)
     {
-        if (_speechRecognizer is null)
-        {
-            const string msg = "Windows Speech Recognition microphone input is not available on this device.";
-            AssistantReplyText.Text = msg;
-            SpeakReply(msg);
-            return;
-        }
-
+        _isListening = !_isListening;
         if (_isListening)
         {
-            _speechRecognizer.RecognizeAsyncCancel();
-            _isListening = false;
-            VoiceListenButton.Content = "Mic";
-            VoiceStateSubtitle.Text = "Native Win32 · Ready";
+            // Trigger native Windows 10/11 Voice Typing (Win + H) directly into the command box
+            CommandInputBox.Focus();
+            VoiceListenButton.Content = "Listening";
+            VoiceStateSubtitle.Text = "Windows Voice Typing active — speak & press Enter";
+            ApplyAuroraTheme(Color.FromRgb(20, 184, 166), Color.FromRgb(56, 189, 248));
+
+            const byte vkLWin = 0x5B;
+            const byte vkH = 0x48;
+            const uint keyEventKeyUp = 0x0002;
+            keybd_event(vkLWin, 0, 0, UIntPtr.Zero);
+            keybd_event(vkH, 0, 0, UIntPtr.Zero);
+            keybd_event(vkH, 0, keyEventKeyUp, UIntPtr.Zero);
+            keybd_event(vkLWin, 0, keyEventKeyUp, UIntPtr.Zero);
         }
         else
         {
-            _speechRecognizer.RecognizeAsync(RecognizeMode.Multiple);
-            _isListening = true;
-            VoiceListenButton.Content = "Listening";
-            VoiceStateSubtitle.Text = "Listening via System.Speech...";
-            ApplyAuroraTheme(Color.FromRgb(20, 184, 166), Color.FromRgb(56, 189, 248));
+            VoiceListenButton.Content = "Mic";
+            VoiceStateSubtitle.Text = "Native Win32 · Ready";
         }
     }
 
@@ -941,7 +934,14 @@ public partial class MainWindow : Window
     {
         _ttsMuted = !_ttsMuted;
         MuteTtsButton.Content = _ttsMuted ? "Voice: Muted" : "Voice: On";
-        if (_ttsMuted) _synthesizer.SpeakAsyncCancelAll();
+        if (_ttsMuted && _sapiVoice is not null && _sapiVoiceType is not null)
+        {
+            try
+            {
+                _sapiVoiceType.InvokeMember("Speak", BindingFlags.InvokeMethod, null, _sapiVoice, new object[] { string.Empty, SapiSpeakAsyncPurge });
+            }
+            catch { }
+        }
     }
 
     private void LockPc_Click(object sender, RoutedEventArgs e)

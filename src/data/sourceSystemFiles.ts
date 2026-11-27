@@ -79,6 +79,36 @@ public static class NativeInterop
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DataBlob
+    {
+        public int cbData;
+        public IntPtr pbData;
+    }
+
+    [DllImport("crypt32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool CryptProtectData(
+        ref DataBlob pDataIn,
+        string? szDataDescr,
+        IntPtr pOptionalEntropy,
+        IntPtr pvReserved,
+        IntPtr pPromptStruct,
+        int dwFlags,
+        out DataBlob pDataOut);
+
+    [DllImport("crypt32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool CryptUnprotectData(
+        ref DataBlob pDataIn,
+        IntPtr ppszDataDescr,
+        IntPtr pOptionalEntropy,
+        IntPtr pvReserved,
+        IntPtr pPromptStruct,
+        int dwFlags,
+        out DataBlob pDataOut);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr LocalFree(IntPtr hMem);
+
     private static volatile bool _managedEmergencyStop;
 
     public static bool MoveMouseSmooth(int x, int y, int durationMs = 360)
@@ -156,6 +186,47 @@ public static class NativeInterop
         }
     }
 
+    private static byte[] Win32Dpapi(byte[] input, bool protect)
+    {
+        IntPtr inPtr = Marshal.AllocHGlobal(input.Length);
+        DataBlob outBlob = default;
+        try
+        {
+            Marshal.Copy(input, 0, inPtr, input.Length);
+            var inBlob = new DataBlob { cbData = input.Length, pbData = inPtr };
+            const int cryptProtectUiForbidden = 0x1;
+
+            bool ok = protect
+                ? CryptProtectData(ref inBlob, "WindowsNotchPro_Vault", IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, cryptProtectUiForbidden, out outBlob)
+                : CryptUnprotectData(ref inBlob, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, cryptProtectUiForbidden, out outBlob);
+
+            if (!ok || outBlob.pbData == IntPtr.Zero || outBlob.cbData <= 0)
+            {
+                throw new CryptographicException("Win32 DPAPI operation failed.");
+            }
+
+            var result = new byte[outBlob.cbData];
+            Marshal.Copy(outBlob.pbData, result, 0, outBlob.cbData);
+            return result;
+        }
+        finally
+        {
+            if (inPtr != IntPtr.Zero)
+            {
+                Marshal.Copy(new byte[input.Length], 0, inPtr, input.Length);
+                Marshal.FreeHGlobal(inPtr);
+            }
+            if (outBlob.pbData != IntPtr.Zero)
+            {
+                if (outBlob.cbData > 0)
+                {
+                    Marshal.Copy(new byte[outBlob.cbData], 0, outBlob.pbData, outBlob.cbData);
+                }
+                LocalFree(outBlob.pbData);
+            }
+        }
+    }
+
     public static byte[] ProtectBytes(byte[] plaintext)
     {
         if (plaintext.Length == 0) return Array.Empty<byte>();
@@ -176,7 +247,7 @@ public static class NativeInterop
         }
         catch (DllNotFoundException)
         {
-            return ProtectedData.Protect(plaintext, null, DataProtectionScope.CurrentUser);
+            return Win32Dpapi(plaintext, protect: true);
         }
         finally
         {
@@ -207,7 +278,7 @@ public static class NativeInterop
         }
         catch (DllNotFoundException)
         {
-            return ProtectedData.Unprotect(cipher, null, DataProtectionScope.CurrentUser);
+            return Win32Dpapi(cipher, protect: false);
         }
         finally
         {
@@ -258,12 +329,34 @@ public static class NativeInterop
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Microsoft.VisualBasic.FileIO;
+using System.Runtime.InteropServices;
 
 namespace WindowsNotchPro.Services;
 
 public sealed class SafeFileManager
 {
+    private const uint FoDelete = 0x0003;
+    private const ushort FofSilent = 0x0004;
+    private const ushort FofNoConfirmation = 0x0010;
+    private const ushort FofAllowUndo = 0x0040;
+    private const ushort FofNoErrorUi = 0x0400;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct ShFileOpStruct
+    {
+        public IntPtr hwnd;
+        public uint wFunc;
+        public string pFrom;
+        public string? pTo;
+        public ushort fFlags;
+        [MarshalAs(UnmanagedType.Bool)]
+        public bool fAnyOperationsAborted;
+        public IntPtr hNameMappings;
+        public string? lpszProgressTitle;
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SHFileOperationW(ref ShFileOpStruct lpFileOp);
     private readonly AuditLogger _audit;
     private readonly Dictionary<string, string> _allowedRoots;
 
@@ -364,11 +457,20 @@ public sealed class SafeFileManager
             return (false, symlinkErr);
         }
 
-        // Soft-delete strictly to Windows Recycle Bin (never permanent Directory.Delete)
-        FileSystem.DeleteDirectory(
-            check.FullPath,
-            UIOption.OnlyErrorDialogs,
-            RecycleOption.SendToRecycleBin);
+        // Soft-delete strictly to Windows Recycle Bin via Win32 SHFileOperationW (never permanent delete)
+        var op = new ShFileOpStruct
+        {
+            wFunc = FoDelete,
+            pFrom = check.FullPath + "\0\0",
+            fFlags = FofAllowUndo | FofNoConfirmation | FofSilent | FofNoErrorUi,
+        };
+        int rc = SHFileOperationW(ref op);
+        if (rc != 0 || op.fAnyOperationsAborted)
+        {
+            var err = $"Could not move '{check.CleanName}' to the Recycle Bin (Win32 code {rc}).";
+            _audit.Log("folder", "folder_soft_delete", "warning", err);
+            return (false, err);
+        }
 
         _audit.Log("folder", "folder_soft_delete", "allowed", $"Recycle Bin <- {check.NormalizedRoot}\\{check.CleanName}");
         return (true, $"Moved '{check.CleanName}' from {check.NormalizedRoot} to the Recycle Bin.");
@@ -1620,10 +1722,10 @@ if errorlevel 1 (
 )
 dotnet --version
 
-:: 3. Publish standalone win-x64 WPF executable
+:: 3. Build WindowsNotchPro.exe using local .NET 8 SDK (zero NuGet downloads required)
 echo.
-echo [3/3] Publishing self-contained WindowsNotchPro.exe (win-x64) ...
-dotnet publish WindowsNotchPro.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist
+echo [3/3] Building WindowsNotchPro.exe (win-x64, offline-safe) ...
+dotnet publish WindowsNotchPro.csproj -c Release -o dist --nologo
 if errorlevel 1 goto :build_failed
 
 if exist native\NotchNative.dll (
