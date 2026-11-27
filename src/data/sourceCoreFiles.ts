@@ -17,11 +17,11 @@ export const SOURCE_CORE_FILES: SourceFileEntry[] = [
     <UseWPF>true</UseWPF>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <AssemblyName>WindowsNotchPro</AssemblyName>
+    <AssemblyName>NOVA</AssemblyName>
     <RootNamespace>WindowsNotchPro</RootNamespace>
     <Version>2.0.0</Version>
     <Company>NOVA Systems</Company>
-    <Product>NOVA / WindowsNotch Pro</Product>
+    <Product>NOVA</Product>
   </PropertyGroup>
 
   <ItemGroup>

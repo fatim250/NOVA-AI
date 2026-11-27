@@ -1,0 +1,94 @@
+name: Build NOVA Windows Release (x64)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-win-x64:
+    runs-on: windows-latest
+    env:
+      RELEASE_NAME: NOVA-v2.0.0-win-x64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build NOVA Bento Web UI -> web/
+        shell: pwsh
+        run: |
+          npm install
+          npm run build
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Compile Native C Win32 Engine (NotchNative.dll)
+        shell: pwsh
+        run: |
+          if (Get-Command gcc.exe -ErrorAction SilentlyContinue) {
+            gcc.exe -O2 -shared -DNOTCH_NATIVE_EXPORTS -o WindowsNotchPro\native\NotchNative.dll WindowsNotchPro\native\notch_native.c -luser32 -lcrypt32 -ladvapi32 -lm
+          } else {
+            Write-Host "gcc.exe not found; NOVA will use built-in Win32 P/Invoke."
+          }
+
+      - name: Publish Single-File Self-Contained NOVA.exe (win-x64)
+        shell: pwsh
+        run: |
+          dotnet publish WindowsNotchPro\WindowsNotchPro.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            -o publish_out
+
+      - name: Assemble 3-item portable folder (NOVA.exe + python/ + web/)
+        shell: pwsh
+        run: |
+          $root = "$env:RELEASE_NAME"
+          New-Item -ItemType Directory -Force -Path "$root\python" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$root\web" | Out-Null
+
+          Copy-Item "publish_out\NOVA.exe" "$root\NOVA.exe" -Force
+          Copy-Item "python\*" "$root\python\" -Recurse -Force
+          Copy-Item "dist\*" "$root\web\" -Recurse -Force
+
+          Write-Host "Release folder contents:"
+          Get-ChildItem "$root"
+          Compress-Archive -Path "$root" -DestinationPath "$root.zip" -Force
+
+      - name: Upload NOVA-v2.0.0-win-x64.zip Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NOVA-v2.0.0-win-x64
+          path: NOVA-v2.0.0-win-x64.zip
+
+      - name: Publish GitHub Release (v2.0.0)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "v2.0.0"
+          $exists = gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag "$env:RELEASE_NAME.zip" --clobber
+          } else {
+            gh release create $tag "$env:RELEASE_NAME.zip" `
+              --title "NOVA v2.0.0 (Windows x64)" `
+              --notes "Portable Windows 10 & 11 x64 release containing NOVA.exe, python/, and web/. Extract and double-click NOVA.exe."
+          }

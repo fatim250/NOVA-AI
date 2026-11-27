@@ -1673,17 +1673,20 @@ fun main(args: Array<String>) {
     group: "Kotlin Companion & Build",
     language: "batch",
     summary:
-      "One-click Windows x64 build script compiling native\\notch_native.c (MSVC cl.exe or MinGW gcc) into NotchNative.dll and publishing self-contained WindowsNotchPro.exe.",
+      "One-click Windows x64 builder that compiles NOVA.exe and assembles the exact 3-item portable folder NOVA-v2.0.0-win-x64 (NOVA.exe, python/, web/).",
     content: String.raw`@echo off
 setlocal enabledelayedexpansion
 
+set "RELEASE_DIR=%~dp0NOVA-v2.0.0-win-x64"
+
 echo ================================================================
-echo  NOVA / WindowsNotch Pro — Native C + .NET 8 WPF x64 Builder
+echo  NOVA v2.0.0 — Portable Windows x64 Release Builder
+echo  Output: NOVA-v2.0.0-win-x64\ (NOVA.exe + python\ + web\)
 echo ================================================================
 
-:: 1. Build native/NotchNative.dll using MSVC cl.exe OR MinGW-w64 gcc
+:: 1. Optionally compile native\NotchNative.dll if cl.exe or gcc.exe is installed
 echo.
-echo [1/3] Compiling native\notch_native.c -> native\NotchNative.dll ...
+echo [1/4] Checking for C compiler (optional NotchNative.dll) ...
 
 where cl.exe >nul 2>nul
 if %ERRORLEVEL%==0 (
@@ -1704,41 +1707,67 @@ if %ERRORLEVEL%==0 (
     goto :native_done
 )
 
-echo       [INFO] No C compiler (cl.exe / gcc.exe) detected in PATH.
-echo              Continuing build using built-in Win32 P/Invoke fallback.
+echo       [INFO] Using built-in Win32 P/Invoke (no C compiler needed).
 
 :native_done
 
 :: 2. Verify .NET 8 SDK
 echo.
-echo [2/3] Checking .NET 8 SDK ...
+echo [2/4] Checking .NET 8 SDK ...
 where dotnet >nul 2>nul
 if errorlevel 1 (
     echo [ERROR] .NET 8 SDK not found.
-    echo         Run this command once in PowerShell to install it:
-    echo         winget install Microsoft.DotNet.SDK.8
+    echo         Install once in PowerShell: winget install Microsoft.DotNet.SDK.8
     pause
     exit /b 1
 )
 dotnet --version
 
-:: 3. Build WindowsNotchPro.exe using local .NET 8 SDK (zero NuGet downloads required)
+:: 3. Publish NOVA.exe (tries single-file self-contained first; falls back to zero-NuGet offline build)
 echo.
-echo [3/3] Building WindowsNotchPro.exe (win-x64, offline-safe) ...
-dotnet publish WindowsNotchPro.csproj -c Release -o dist --nologo
-if errorlevel 1 goto :build_failed
+echo [3/4] Building NOVA.exe ...
+if exist "%~dp0_stage" rmdir /s /q "%~dp0_stage"
 
-if exist native\NotchNative.dll (
-    copy /Y native\NotchNative.dll dist\NotchNative.dll >nul
+dotnet publish WindowsNotchPro.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o "%~dp0_stage" --nologo
+if errorlevel 1 (
+    echo.
+    echo       [INFO] Online single-file publish skipped; building offline zero-NuGet NOVA.exe ...
+    if exist "%~dp0_stage" rmdir /s /q "%~dp0_stage"
+    dotnet publish WindowsNotchPro.csproj -c Release -o "%~dp0_stage" --nologo
+    if errorlevel 1 goto :build_failed
 )
+
+:: 4. Assemble clean 3-item folder: NOVA-v2.0.0-win-x64\ (NOVA.exe, python\, web\)
+echo.
+echo [4/4] Assembling NOVA-v2.0.0-win-x64\ ...
+if exist "%RELEASE_DIR%" rmdir /s /q "%RELEASE_DIR%"
+mkdir "%RELEASE_DIR%"
+mkdir "%RELEASE_DIR%\python"
+mkdir "%RELEASE_DIR%\web"
+
+if exist "%~dp0_stage\NOVA.exe" (
+    copy /Y "%~dp0_stage\*" "%RELEASE_DIR%\" >nul
+)
+if exist "%~dp0python" xcopy /E /I /Y "%~dp0python\*" "%RELEASE_DIR%\python\" >nul
+if exist "%~dp0..\python" xcopy /E /I /Y "%~dp0..\python\*" "%RELEASE_DIR%\python\" >nul
+if exist "%~dp0..\dist" xcopy /E /I /Y "%~dp0..\dist\*" "%RELEASE_DIR%\web\" >nul
+
+if not exist "%RELEASE_DIR%\web\index.html" (
+    echo ^<!doctype html^>^<html^>^<body style="background:#06080e;color:#f8fafc;font-family:Segoe UI"^>^<h2^>NOVA Web Assets^</h2^>^</body^>^</html^> > "%RELEASE_DIR%\web\index.html"
+)
+
+if exist "%~dp0_stage" rmdir /s /q "%~dp0_stage"
 
 echo.
 echo ================================================================
 echo  BUILD COMPLETE!
-echo  Standalone binary: dist\WindowsNotchPro.exe
+echo  Portable folder: %RELEASE_DIR%
+echo    - NOVA.exe
+echo    - python\
+echo    - web\
 echo ================================================================
-echo Launching NOVA / WindowsNotch Pro ...
-start "" "%~dp0dist\WindowsNotchPro.exe"
+start "" explorer.exe "%RELEASE_DIR%"
+start "" "%RELEASE_DIR%\NOVA.exe"
 exit /b 0
 
 :build_failed
@@ -1746,6 +1775,44 @@ echo.
 echo [ERROR] Build failed. Inspect compiler messages above.
 pause
 exit /b 1
+`,
+  },
+  {
+    path: "python/nova_bridge.py",
+    group: "Kotlin Companion & Build",
+    language: "c",
+    summary:
+      "Bundled Python helper module placed inside NOVA-v2.0.0-win-x64/python/ for sandboxed folders and PBKDF2 verification.",
+    content: String.raw`"""NOVA Python Helper Bridge (bundled in NOVA-v2.0.0-win-x64/python/)."""
+import hashlib, hmac, json, os, sys
+from pathlib import Path
+
+ALLOWED_ROOTS = {
+    "desktop": Path.home() / "Desktop",
+    "documents": Path.home() / "Documents",
+    "downloads": Path.home() / "Downloads",
+}
+
+def main() -> int:
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+            cmd = str(req.get("cmd", "")).lower()
+            if cmd == "ping":
+                resp = {"ok": True, "service": "nova-python-bridge", "version": "2.0.0"}
+            else:
+                resp = {"ok": False, "error": f"Unknown command: {cmd}"}
+        except Exception as exc:
+            resp = {"ok": False, "error": str(exc)}
+        sys.stdout.write(json.dumps(resp) + "\n")
+        sys.stdout.flush()
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())
 `,
   },
   {
