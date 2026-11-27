@@ -2,1472 +2,1647 @@ import type { SourceFileEntry } from "../types/notch";
 
 export const SOURCE_SYSTEM_FILES: SourceFileEntry[] = [
   {
-    path: "windows_notch_pro/automation/mouse_controller.py",
-    group: "Automation & Gestures",
-    language: "python",
+    path: "Services/NativeInterop.cs",
+    group: "C# Core Services & Security",
+    language: "csharp",
     summary:
-      "Smooth cubic ease-in-out cursor movement, clicks, scroll, keep-awake autonomous patrol, and instant emergency-stop kill switch.",
-    content: `"""Autonomous Mouse Controller with Cubic Ease-In-Out & Emergency Stop."""
-from __future__ import annotations
+      "P/Invoke DllImport bindings to NotchNative.dll with safe unmanaged memory cleanup and zeroing.",
+    content: String.raw`using System;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
 
-import ctypes
-import math
-import threading
-import time
-from typing import Optional, Tuple
+namespace WindowsNotchPro.Services;
 
+public static class NativeInterop
+{
+    private const string NativeDll = "NotchNative.dll";
 
-class POINT(ctypes.Structure):
-    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+    public const int MouseLeft = 0;
+    public const int MouseRight = 1;
+    public const int MouseDoubleLeft = 2;
+    public const int DwmCornerRound = 2;
 
+    [DllImport(NativeDll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int notch_mouse_move_smooth(int targetX, int targetY, int durationMs);
 
-def cubic_ease_in_out(t: float) -> float:
-    t = max(0.0, min(1.0, t))
-    if t < 0.5:
-        return 4.0 * t * t * t
-    return 1.0 - math.pow(-2.0 * t + 2.0, 3) / 2.0
+    [DllImport(NativeDll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int notch_mouse_click(int button);
 
+    [DllImport(NativeDll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void notch_mouse_emergency_stop();
 
-class MouseController:
-    """Win32 SendInput / SetCursorPos smooth cursor controller with kill switch."""
+    [DllImport(NativeDll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void notch_mouse_reset_stop();
 
-    MOUSEEVENTF_LEFTDOWN = 0x0002
-    MOUSEEVENTF_LEFTUP = 0x0004
-    MOUSEEVENTF_RIGHTDOWN = 0x0008
-    MOUSEEVENTF_RIGHTUP = 0x0010
-    MOUSEEVENTF_WHEEL = 0x0800
+    [DllImport(NativeDll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int notch_mouse_is_stopped();
 
-    def __init__(self, audit_logger=None) -> None:
-        self.audit = audit_logger
-        self._stop_event = threading.Event()
-        self._patrol_thread: Optional[threading.Thread] = None
+    [DllImport(NativeDll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int notch_lock_workstation();
 
-    def get_position(self) -> Tuple[int, int]:
-        pt = POINT()
-        ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
-        return int(pt.x), int(pt.y)
+    [DllImport(NativeDll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int notch_set_window_rounded_corners(IntPtr hwnd, int preference);
 
-    def move_smooth(self, target_x: int, target_y: int, duration_s: float = 0.35, steps: int = 40) -> None:
-        start_x, start_y = self.get_position()
-        self._stop_event.clear()
-        step_sleep = max(0.004, duration_s / max(1, steps))
-        for i in range(1, steps + 1):
-            if self._stop_event.is_set():
-                break
-            eased = cubic_ease_in_out(i / steps)
-            nx = int(round(start_x + (target_x - start_x) * eased))
-            ny = int(round(start_y + (target_y - start_y) * eased))
-            ctypes.windll.user32.SetCursorPos(nx, ny)
-            time.sleep(step_sleep)
-        if self.audit:
-            self.audit.log("mouse", "move_smooth", "allowed", f"({target_x},{target_y})")
+    [DllImport(NativeDll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int notch_dpapi_protect(
+        byte[] plaintext,
+        uint plaintextLen,
+        out IntPtr outCipher,
+        out uint outCipherLen);
 
-    def move_relative(self, dx: int, dy: int, duration_s: float = 0.25) -> None:
-        cx, cy = self.get_position()
-        self.move_smooth(cx + dx, cy + dy, duration_s=duration_s)
+    [DllImport(NativeDll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int notch_dpapi_unprotect(
+        byte[] cipher,
+        uint cipherLen,
+        out IntPtr outPlaintext,
+        out uint outPlaintextLen);
 
-    def click(self, button: str = "left", double: bool = False) -> None:
-        down, up = (
-            (self.MOUSEEVENTF_RIGHTDOWN, self.MOUSEEVENTF_RIGHTUP)
-            if button == "right"
-            else (self.MOUSEEVENTF_LEFTDOWN, self.MOUSEEVENTF_LEFTUP)
-        )
-        count = 2 if double else 1
-        for _ in range(count):
-            ctypes.windll.user32.mouse_event(down, 0, 0, 0, 0)
-            ctypes.windll.user32.mouse_event(up, 0, 0, 0, 0)
-            time.sleep(0.05)
-        if self.audit:
-            self.audit.log("mouse", "click", "allowed", f"button={button} double={double}")
+    [DllImport(NativeDll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void notch_dpapi_free(IntPtr buffer, uint length);
 
-    def scroll(self, clicks: int) -> None:
-        ctypes.windll.user32.mouse_event(self.MOUSEEVENTF_WHEEL, 0, 0, clicks * 120, 0)
-        if self.audit:
-            self.audit.log("mouse", "scroll", "allowed", f"clicks={clicks}")
+    [DllImport(NativeDll, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+    private static extern int notch_pipe_send_unlock_request(
+        string pipeName,
+        byte[] payload,
+        uint payloadLen,
+        byte[] responseBuf,
+        uint responseCap,
+        out uint outResponseLen);
 
-    def start_keep_awake_patrol(self, interval_s: float = 25.0) -> None:
-        if self._patrol_thread and self._patrol_thread.is_alive():
-            return
-        self._stop_event.clear()
-
-        def patrol_loop() -> None:
-            direction = 1
-            while not self._stop_event.is_set():
-                self.move_relative(24 * direction, 0, duration_s=0.35)
-                direction *= -1
-                self._stop_event.wait(interval_s)
-
-        self._patrol_thread = threading.Thread(target=patrol_loop, name="NotchPatrol", daemon=True)
-        self._patrol_thread.start()
-        if self.audit:
-            self.audit.log("mouse", "patrol_started", "allowed", f"interval={interval_s}s")
-
-    def emergency_stop(self) -> None:
-        self._stop_event.set()
-        if self.audit:
-            self.audit.log("mouse", "emergency_stop", "warning", "All mouse motion halted")
-`,
-  },
-  {
-    path: "windows_notch_pro/automation/gesture_airmouse.py",
-    group: "Automation & Gestures",
-    language: "python",
-    summary:
-      "Optional MediaPipe Hand-Gesture Air-Mouse with EMA-smoothed Pointing_Up index tracking, Closed_Fist workstation lock, Thumb_Up/Thumb_Down volume, and kill switch.",
-    content: `"""Optional MediaPipe Air-Mouse Gesture Controller with EMA Smoothing & Kill Switch."""
-from __future__ import annotations
-
-import ctypes
-import threading
-import time
-from typing import Callable, Optional
-
-
-class AirMouseController:
-    """Tracks webcam hand gestures via MediaPipe when explicitly enabled."""
-
-    def __init__(
-        self,
-        mouse_controller,
-        lock_callback: Callable[[], bool],
-        volume_callback: Callable[[int], None],
-        ema_alpha: float = 0.28,
-        audit_logger=None,
-    ) -> None:
-        self.mouse = mouse_controller
-        self.lock_callback = lock_callback
-        self.volume_callback = volume_callback
-        self.ema_alpha = ema_alpha
-        self.audit = audit_logger
-        self._stop_event = threading.Event()
-        self._thread: Optional[threading.Thread] = None
-        self._ema_x: Optional[float] = None
-        self._ema_y: Optional[float] = None
-
-    def start(self) -> None:
-        if self._thread and self._thread.is_alive():
-            return
-        self._stop_event.clear()
-        self._thread = threading.Thread(target=self._loop, name="NotchAirMouse", daemon=True)
-        self._thread.start()
-        if self.audit:
-            self.audit.log("mouse", "air_mouse_enabled", "allowed", f"ema_alpha={self.ema_alpha}")
-
-    def emergency_stop(self) -> None:
-        self._stop_event.set()
-        if self.audit:
-            self.audit.log("mouse", "air_mouse_stopped", "warning", "Air-Mouse terminated")
-
-    def apply_ema(self, raw_x: float, raw_y: float) -> tuple[int, int]:
-        if self._ema_x is None or self._ema_y is None:
-            self._ema_x, self._ema_y = raw_x, raw_y
-        else:
-            self._ema_x = self.ema_alpha * raw_x + (1.0 - self.ema_alpha) * self._ema_x
-            self._ema_y = self.ema_alpha * raw_y + (1.0 - self.ema_alpha) * self._ema_y
-        return int(round(self._ema_x)), int(round(self._ema_y))
-
-    def _loop(self) -> None:
-        try:
-            import cv2  # type: ignore
-            import mediapipe as mp  # type: ignore
-        except ImportError:
-            return
-
-        screen_w = ctypes.windll.user32.GetSystemMetrics(0)
-        screen_h = ctypes.windll.user32.GetSystemMetrics(1)
-        cap = cv2.VideoCapture(0)
-        hands = mp.solutions.hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
-        last_action_ts = 0.0
-
-        try:
-            while not self._stop_event.is_set():
-                ok, frame = cap.read()
-                if not ok:
-                    time.sleep(0.05)
-                    continue
-                rgb = cv2.cvtColor(cv2.flip(frame, 1), cv2.COLOR_BGR2RGB)
-                res = hands.process(rgb)
-                if not res.multi_hand_landmarks:
-                    continue
-
-                lm = res.multi_hand_landmarks[0].landmark
-                gesture = self._classify_gesture(lm)
-                now = time.monotonic()
-
-                if gesture == "Pointing_Up":
-                    sx, sy = self.apply_ema(lm[8].x * screen_w, lm[8].y * screen_h)
-                    ctypes.windll.user32.SetCursorPos(sx, sy)
-                elif gesture == "Closed_Fist" and (now - last_action_ts) > 2.5:
-                    last_action_ts = now
-                    if self.audit:
-                        self.audit.log("security", "gesture_lock", "allowed", "Closed_Fist detected")
-                    self.lock_callback()
-                elif gesture == "Thumb_Up" and (now - last_action_ts) > 0.35:
-                    last_action_ts = now
-                    self.volume_callback(+2)
-                elif gesture == "Thumb_Down" and (now - last_action_ts) > 0.35:
-                    last_action_ts = now
-                    self.volume_callback(-2)
-        finally:
-            cap.release()
-            hands.close()
-
-    @staticmethod
-    def _classify_gesture(lm) -> str:
-        index_up = lm[8].y < lm[6].y
-        middle_up = lm[12].y < lm[10].y
-        ring_up = lm[16].y < lm[14].y
-        pinky_up = lm[20].y < lm[18].y
-        thumb_up = lm[4].y < lm[3].y and lm[4].y < lm[5].y
-        thumb_down = lm[4].y > lm[3].y and lm[4].y > lm[17].y
-
-        if index_up and not middle_up and not ring_up and not pinky_up:
-            return "Pointing_Up"
-        if not index_up and not middle_up and not ring_up and not pinky_up:
-            if thumb_up:
-                return "Thumb_Up"
-            if thumb_down:
-                return "Thumb_Down"
-            return "Closed_Fist"
-        return "Open_Palm"
-`,
-  },
-  {
-    path: "windows_notch_pro/sandbox/folder_manager.py",
-    group: "Sandbox & Security",
-    language: "python",
-    summary:
-      "Sandboxed folder create/rename/delete strictly confined to Desktop, Documents, and Downloads; blocks traversal and reserved Windows paths; defaults to Recycle Bin via send2trash.",
-    content: `"""Sandboxed Folder Manager (Desktop, Documents, Downloads Only + Recycle Bin Soft-Delete)."""
-from __future__ import annotations
-
-from pathlib import Path
-import re
-from typing import Dict, Optional, Tuple
-
-WINDOWS_RESERVED_NAMES = {
-    "CON", "PRN", "AUX", "NUL",
-    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
-}
-ILLEGAL_CHARS_RE = re.compile(r'[<>:"/\\\\|?*]')
-
-
-class SandboxedFolderManager:
-    """Enforces strict directory confinement and Recycle Bin soft-delete."""
-
-    def __init__(self, roots: Optional[Dict[str, Path]] = None, audit_logger=None) -> None:
-        home = Path.home()
-        self.roots: Dict[str, Path] = roots or {
-            "desktop": (home / "Desktop").resolve(),
-            "documents": (home / "Documents").resolve(),
-            "downloads": (home / "Downloads").resolve(),
+    public static bool MoveMouseSmooth(int x, int y, int durationMs = 360)
+    {
+        try
+        {
+            return notch_mouse_move_smooth(x, y, durationMs) == 0;
         }
-        self.audit = audit_logger
-
-    def _resolve_safe_path(self, name: str, root_name: str) -> Tuple[Optional[Path], Optional[str]]:
-        root_key = root_name.strip().lower()
-        if root_key not in self.roots:
-            return None, f"Blocked: '{root_name}' is not an approved root (Desktop, Documents, Downloads)."
-
-        clean = name.strip()
-        if not clean or ".." in clean or ILLEGAL_CHARS_RE.search(clean):
-            return None, f"Blocked unsafe folder name or traversal attempt: '{name}'."
-
-        if clean.split(".")[0].upper() in WINDOWS_RESERVED_NAMES:
-            return None, f"Blocked Windows reserved device name: '{clean}'."
-
-        base_dir = self.roots[root_key].resolve()
-        candidate = (base_dir / clean).resolve()
-
-        try:
-            candidate.relative_to(base_dir)
-        except ValueError:
-            return None, f"Blocked sandbox escape outside {base_dir}."
-
-        return candidate, None
-
-    def create_folder(self, name: str, root: str = "Desktop") -> Tuple[bool, str]:
-        target, err = self._resolve_safe_path(name, root)
-        if err or target is None:
-            if self.audit:
-                self.audit.log("folder", "folder_create", "blocked", err or "Invalid path")
-            return False, err or "Blocked."
-        target.mkdir(parents=False, exist_ok=True)
-        msg = f"Created folder '{target.name}' in {root}."
-        if self.audit:
-            self.audit.log("folder", "folder_create", "allowed", str(target))
-        return True, msg
-
-    def rename_folder(self, old_name: str, new_name: str, root: str = "Desktop") -> Tuple[bool, str]:
-        src, err1 = self._resolve_safe_path(old_name, root)
-        dst, err2 = self._resolve_safe_path(new_name, root)
-        if err1 or err2 or src is None or dst is None:
-            reason = err1 or err2 or "Invalid rename path."
-            if self.audit:
-                self.audit.log("folder", "folder_rename", "blocked", reason)
-            return False, reason
-        if not src.exists():
-            return False, f"Folder '{old_name}' was not found in {root}."
-        src.rename(dst)
-        msg = f"Renamed '{old_name}' to '{new_name}' in {root}."
-        if self.audit:
-            self.audit.log("folder", "folder_rename", "allowed", f"{src} -> {dst}")
-        return True, msg
-
-    def delete_folder(self, name: str, root: str = "Desktop") -> Tuple[bool, str]:
-        target, err = self._resolve_safe_path(name, root)
-        if err or target is None:
-            if self.audit:
-                self.audit.log("folder", "folder_delete", "blocked", err or "Invalid path")
-            return False, err or "Blocked."
-        if not target.exists():
-            return False, f"Folder '{name}' was not found in {root}."
-        try:
-            from send2trash import send2trash  # type: ignore
-
-            send2trash(str(target))
-        except ImportError:
-            # Safe fallback inside sandboxed .NotchRecycleBin when send2trash isn't installed
-            bin_dir = target.parent / ".NotchRecycleBin"
-            bin_dir.mkdir(exist_ok=True)
-            target.rename(bin_dir / target.name)
-        msg = f"Moved folder '{target.name}' to the Recycle Bin."
-        if self.audit:
-            self.audit.log("folder", "folder_delete", "allowed", f"soft_delete={target}")
-        return True, msg
-`,
-  },
-  {
-    path: "windows_notch_pro/sandbox/app_manager.py",
-    group: "Sandbox & Security",
-    language: "python",
-    summary:
-      "Safe application open/close/list manager using shell=False allowlisted commands and a mandatory blocklist protecting critical Windows processes.",
-    content: `"""Safe PC Application Manager (No shell=True + Critical System Process Protection)."""
-from __future__ import annotations
-
-import subprocess
-from typing import Dict, List, Tuple
-
-PROTECTED_PROCESSES = frozenset({
-    "lsass.exe",
-    "csrss.exe",
-    "winlogon.exe",
-    "svchost.exe",
-    "explorer.exe",
-    "smss.exe",
-    "services.exe",
-    "wininit.exe",
-    "system",
-    "ntoskrnl.exe",
-})
-
-ALLOWED_APP_LAUNCHERS: Dict[str, List[str]] = {
-    "chrome": ["chrome.exe"],
-    "google chrome": ["chrome.exe"],
-    "browser": ["chrome.exe"],
-    "notepad": ["notepad.exe"],
-    "calculator": ["calc.exe"],
-    "calc": ["calc.exe"],
-    "terminal": ["wt.exe"],
-    "powershell": ["powershell.exe"],
-    "edge": ["msedge.exe"],
-    "vs code": ["code"],
-    "vscode": ["code"],
-    "file explorer": ["explorer.exe"],
-    "paint": ["mspaint.exe"],
-}
-
-
-class SafeAppManager:
-    """Launches and closes desktop apps safely without shell=True."""
-
-    def __init__(self, platform_adapter=None, audit_logger=None) -> None:
-        self.platform = platform_adapter
-        self.audit = audit_logger
-
-    @staticmethod
-    def is_protected_process(name: str) -> bool:
-        clean = name.strip().lower()
-        return clean in PROTECTED_PROCESSES or f"{clean}.exe" in PROTECTED_PROCESSES
-
-    def open_app(self, app_name: str) -> Tuple[bool, str]:
-        key = app_name.strip().lower()
-        cmd = ALLOWED_APP_LAUNCHERS.get(key)
-        if not cmd:
-            msg = f"Application '{app_name}' is not in the approved launcher allowlist."
-            if self.audit:
-                self.audit.log("app", "app_open", "blocked", msg)
-            return False, msg
-
-        subprocess.Popen(cmd, shell=False)
-        msg = f"Opened {app_name}."
-        if self.audit:
-            self.audit.log("app", "app_open", "allowed", f"cmd={cmd}")
-        return True, msg
-
-    def close_app(self, app_or_process: str) -> Tuple[bool, str]:
-        if self.is_protected_process(app_or_process):
-            msg = f"Blocked: '{app_or_process}' is a protected Windows system process."
-            if self.audit:
-                self.audit.log("app", "app_close", "blocked", msg)
-            return False, msg
-
-        target_exe = app_or_process.strip().lower()
-        if not target_exe.endswith(".exe"):
-            alias_map = {
-                "chrome": "chrome.exe",
-                "google chrome": "chrome.exe",
-                "browser": "chrome.exe",
-                "notepad": "notepad.exe",
-                "calculator": "CalculatorApp.exe",
-                "calc": "CalculatorApp.exe",
-                "edge": "msedge.exe",
-                "vs code": "Code.exe",
-                "terminal": "WindowsTerminal.exe",
-            }
-            target_exe = alias_map.get(target_exe, f"{target_exe}.exe")
-
-        if self.is_protected_process(target_exe):
-            msg = f"Blocked: '{target_exe}' is a protected Windows system process."
-            if self.audit:
-                self.audit.log("app", "app_close", "blocked", msg)
-            return False, msg
-
-        subprocess.run(
-            ["taskkill", "/IM", target_exe, "/T"],
-            shell=False,
-            check=False,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        msg = f"Closed {app_or_process}."
-        if self.audit:
-            self.audit.log("app", "app_close", "allowed", f"process={target_exe}")
-        return True, msg
-
-    def list_running_apps(self) -> List[str]:
-        try:
-            import psutil  # type: ignore
-
-            names = sorted({p.info["name"] for p in psutil.process_iter(["name"]) if p.info.get("name")})
-            return names
-        except Exception:
-            return []
-`,
-  },
-  {
-    path: "windows_notch_pro/security/crypto_vault.py",
-    group: "Sandbox & Security",
-    language: "python",
-    summary:
-      "PBKDF2-HMAC-SHA256 (200,000 iterations) passphrase hashing, Windows DPAPI CryptProtectData/CryptUnprotectData credential vault, and 3-failure 60-second brute-force lockout + webcam intruder snapshot.",
-    content: `"""Security Vault: PBKDF2-HMAC-SHA256 (200k), Windows DPAPI, & Brute-Force Protection."""
-from __future__ import annotations
-
-import base64
-import ctypes
-from ctypes import wintypes
-import hashlib
-import hmac
-import json
-import os
-from pathlib import Path
-import sys
-import time
-from typing import Optional, Tuple
-
-
-class DATA_BLOB(ctypes.Structure):
-    _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
-
-
-class SecurityVault:
-    """Zero-plaintext credential vault with PBKDF2-HMAC-SHA256 & brute-force rate limiting."""
-
-    PBKDF2_ITERATIONS = 200_000
-    MAX_FAILED_ATTEMPTS = 3
-    LOCKOUT_SECONDS = 60
-
-    def __init__(self, vault_path: Path, audit_logger=None, capture_intruder: bool = True) -> None:
-        self.vault_path = Path(vault_path)
-        self.audit = audit_logger
-        self.capture_intruder = capture_intruder
-        self._failed_attempts = 0
-        self._lockout_until = 0.0
-        self._data = self._load()
-
-    def _load(self) -> dict:
-        if self.vault_path.exists():
-            return json.loads(self.vault_path.read_text(encoding="utf-8"))
-        return {}
-
-    def _save(self) -> None:
-        self.vault_path.parent.mkdir(parents=True, exist_ok=True)
-        self.vault_path.write_text(json.dumps(self._data, indent=2), encoding="utf-8")
-
-    # ---- 1. PBKDF2-HMAC-SHA256 Passphrase (200,000 iterations) ----
-    def set_passphrase(self, passphrase: str) -> None:
-        salt = os.urandom(16)
-        digest = hashlib.pbkdf2_hmac(
-            "sha256", passphrase.encode("utf-8"), salt, self.PBKDF2_ITERATIONS
-        )
-        self._data["passphrase"] = {
-            "salt_b64": base64.b64encode(salt).decode("ascii"),
-            "hash_b64": base64.b64encode(digest).decode("ascii"),
-            "iterations": self.PBKDF2_ITERATIONS,
+        catch (DllNotFoundException)
+        {
+            return false;
         }
-        self._save()
-        if self.audit:
-            self.audit.log("security", "passphrase_updated", "allowed", "PBKDF2-HMAC-SHA256 200k")
+    }
 
-    def verify_passphrase(self, candidate: str) -> bool:
-        entry = self._data.get("passphrase")
-        if not entry:
-            return False
-        salt = base64.b64decode(entry["salt_b64"])
-        expected = base64.b64decode(entry["hash_b64"])
-        iters = int(entry.get("iterations", self.PBKDF2_ITERATIONS))
-        actual = hashlib.pbkdf2_hmac("sha256", candidate.encode("utf-8"), salt, iters)
-        return hmac.compare_digest(actual, expected)
+    public static bool ClickMouse(int button = MouseLeft)
+    {
+        try
+        {
+            return notch_mouse_click(button) == 0;
+        }
+        catch (DllNotFoundException)
+        {
+            return false;
+        }
+    }
 
-    # ---- 2. Windows DPAPI Credential Encryption (Never Plaintext) ----
-    @staticmethod
-    def dpapi_protect(plaintext: bytes) -> bytes:
-        if sys.platform != "win32":
-            raise RuntimeError("Windows DPAPI is only available on Win32 hosts.")
-        crypt32 = ctypes.windll.crypt32
-        kernel32 = ctypes.windll.kernel32
-        buf = ctypes.create_string_buffer(plaintext, len(plaintext))
-        in_blob = DATA_BLOB(len(plaintext), buf)
-        out_blob = DATA_BLOB()
-        if not crypt32.CryptProtectData(
-            ctypes.byref(in_blob), "WindowsNotchPro", None, None, None, 0, ctypes.byref(out_blob)
-        ):
-            raise ctypes.WinError()
-        try:
-            return ctypes.string_at(out_blob.pbData, out_blob.cbData)
-        finally:
-            kernel32.LocalFree(out_blob.pbData)
+    public static void TriggerEmergencyStop()
+    {
+        try { notch_mouse_emergency_stop(); } catch (DllNotFoundException) { }
+    }
 
-    @staticmethod
-    def dpapi_unprotect(ciphertext: bytes) -> bytes:
-        if sys.platform != "win32":
-            raise RuntimeError("Windows DPAPI is only available on Win32 hosts.")
-        crypt32 = ctypes.windll.crypt32
-        kernel32 = ctypes.windll.kernel32
-        buf = ctypes.create_string_buffer(ciphertext, len(ciphertext))
-        in_blob = DATA_BLOB(len(ciphertext), buf)
-        out_blob = DATA_BLOB()
-        if not crypt32.CryptUnprotectData(
-            ctypes.byref(in_blob), None, None, None, None, 0, ctypes.byref(out_blob)
-        ):
-            raise ctypes.WinError()
-        try:
-            return ctypes.string_at(out_blob.pbData, out_blob.cbData)
-        finally:
-            kernel32.LocalFree(out_blob.pbData)
+    public static void ResetEmergencyStop()
+    {
+        try { notch_mouse_reset_stop(); } catch (DllNotFoundException) { }
+    }
 
-    def store_windows_credentials(self, username: str, password: str) -> None:
-        payload = json.dumps({"username": username, "password": password}).encode("utf-8")
-        protected = self.dpapi_protect(payload)
-        self._data["dpapi_credentials_b64"] = base64.b64encode(protected).decode("ascii")
-        self._save()
-        if self.audit:
-            self.audit.log("security", "dpapi_vault_sealed", "allowed", f"account={username}")
+    public static bool IsEmergencyStopped()
+    {
+        try { return notch_mouse_is_stopped() != 0; } catch (DllNotFoundException) { return false; }
+    }
 
-    def retrieve_windows_credentials(self) -> Optional[Tuple[str, str]]:
-        raw_b64 = self._data.get("dpapi_credentials_b64")
-        if not raw_b64:
-            return None
-        decrypted = self.dpapi_unprotect(base64.b64decode(raw_b64))
-        parsed = json.loads(decrypted.decode("utf-8"))
-        return str(parsed["username"]), str(parsed["password"])
+    public static bool LockWorkstation()
+    {
+        try
+        {
+            return notch_lock_workstation() == 0;
+        }
+        catch (DllNotFoundException)
+        {
+            return false;
+        }
+    }
 
-    # ---- 3. 2FA Unlock Gate + Brute-Force Protection (3 Strikes -> 60s Lockout) ----
-    def is_locked_out(self, now: Optional[float] = None) -> Tuple[bool, int]:
-        ts = time.monotonic() if now is None else now
-        if ts < self._lockout_until:
-            return True, int(self._lockout_until - ts) + 1
-        return False, 0
+    public static void EnableRoundedCorners(IntPtr hwnd)
+    {
+        try
+        {
+            notch_set_window_rounded_corners(hwnd, DwmCornerRound);
+        }
+        catch (DllNotFoundException)
+        {
+            // Gracefully ignored if DLL is absent during design-time preview
+        }
+    }
 
-    def verify_2fa_unlock(
-        self,
-        passphrase: str,
-        voiceprint_score: float,
-        voiceprint_threshold: float = 0.82,
-        now: Optional[float] = None,
-    ) -> Tuple[bool, str]:
-        ts = time.monotonic() if now is None else now
-        locked, remaining = self.is_locked_out(ts)
-        if locked:
-            msg = f"Unlock rate-limited. Try again in {remaining}s."
-            if self.audit:
-                self.audit.log("security", "unlock_blocked_lockout", "blocked", msg)
-            return False, msg
+    public static byte[] ProtectBytes(byte[] plaintext)
+    {
+        if (plaintext.Length == 0) return Array.Empty<byte>();
+        IntPtr cipherPtr = IntPtr.Zero;
+        uint cipherLen = 0;
 
-        pass_ok = self.verify_passphrase(passphrase)
-        voice_ok = voiceprint_score >= voiceprint_threshold
-        if pass_ok and voice_ok:
-            self._failed_attempts = 0
-            self._lockout_until = 0.0
-            if self.audit:
-                self.audit.log("security", "unlock_2fa_success", "allowed", f"voice_sim={voiceprint_score:.3f}")
-            return True, "2FA verified (passphrase + voiceprint)."
-
-        self._failed_attempts += 1
-        reason = "Invalid passphrase" if not pass_ok else f"Voiceprint rejected ({voiceprint_score:.2f} < {voiceprint_threshold:.2f})"
-        if self._failed_attempts >= self.MAX_FAILED_ATTEMPTS:
-            self._lockout_until = ts + self.LOCKOUT_SECONDS
-            self._failed_attempts = 0
-            if self.capture_intruder:
-                self._capture_intruder_snapshot()
-            msg = f"{reason}. Max attempts exceeded — locked out for {self.LOCKOUT_SECONDS}s."
-            if self.audit:
-                self.audit.log("security", "unlock_brute_force_lockout", "blocked", msg)
-            return False, msg
-
-        if self.audit:
-            self.audit.log("security", "unlock_2fa_failed", "blocked", f"{reason} (attempt {self._failed_attempts}/3)")
-        return False, f"{reason} ({self._failed_attempts}/{self.MAX_FAILED_ATTEMPTS} failures)."
-
-    def _capture_intruder_snapshot(self) -> None:
-        try:
-            import cv2  # type: ignore
-
-            cap = cv2.VideoCapture(0)
-            ok, frame = cap.read()
-            cap.release()
-            if ok:
-                out_dir = self.vault_path.parent / "intruder_snapshots"
-                out_dir.mkdir(exist_ok=True)
-                cv2.imwrite(str(out_dir / f"intruder_{int(time.time())}.jpg"), frame)
-        except Exception:
-            pass
-`,
-  },
-  {
-    path: "windows_notch_pro/security/voiceprint.py",
-    group: "Sandbox & Security",
-    language: "python",
-    summary:
-      "Offline speaker voiceprint enrollment and verification using Mel-frequency cepstral coefficients (MFCC) and cosine similarity with zero cloud dependency.",
-    content: `"""Offline Speaker Voiceprint Verification (MFCC + Cosine Similarity)."""
-from __future__ import annotations
-
-import math
-from pathlib import Path
-from typing import Sequence, Tuple
-
-
-class VoiceprintVerifier:
-    """Extracts 13-dim MFCC fingerprints offline and verifies via cosine similarity."""
-
-    def __init__(self, profile_path: Path, sample_rate: int = 16000, threshold: float = 0.82) -> None:
-        self.profile_path = Path(profile_path)
-        self.sample_rate = sample_rate
-        self.threshold = threshold
-        self._enrolled_vector: list[float] | None = None
-
-    @staticmethod
-    def extract_mfcc_vector(samples: Sequence[float], sample_rate: int = 16000, num_coeffs: int = 13) -> list[float]:
-        """Pure-Python / NumPy-compatible offline MFCC feature extractor."""
-        if not samples:
-            raise ValueError("Audio samples cannot be empty.")
-
-        # Pre-emphasis filter
-        emphasized = [samples[0]] + [samples[i] - 0.97 * samples[i - 1] for i in range(1, len(samples))]
-
-        frame_size = 256
-        hop = 128
-        num_bands = 20
-        band_energies = [0.0] * num_bands
-        frame_count = 0
-
-        for start in range(0, max(1, len(emphasized) - frame_size + 1), hop):
-            frame = emphasized[start : start + frame_size]
-            if len(frame) < frame_size:
-                frame = list(frame) + [0.0] * (frame_size - len(frame))
-            # Hamming window + lightweight DFT power spectrum
-            windowed = [
-                frame[n] * (0.54 - 0.46 * math.cos(2.0 * math.pi * n / (frame_size - 1)))
-                for n in range(frame_size)
-            ]
-            for b in range(num_bands):
-                freq_bin = max(1, int(((b + 1) / num_bands) ** 1.6 * (frame_size // 2)))
-                re_acc = 0.0
-                im_acc = 0.0
-                angle_step = -2.0 * math.pi * freq_bin / frame_size
-                for n, val in enumerate(windowed):
-                    ang = angle_step * n
-                    re_acc += val * math.cos(ang)
-                    im_acc += val * math.sin(ang)
-                power = (re_acc * re_acc + im_acc * im_acc) / frame_size
-                band_energies[b] += math.log1p(power)
-            frame_count += 1
-
-        avg_bands = [e / max(1, frame_count) for e in band_energies]
-        # DCT-II to obtain cepstral coefficients
-        mfcc = [
-            sum(avg_bands[n] * math.cos(math.pi * k * (n + 0.5) / num_bands) for n in range(num_bands))
-            for k in range(num_coeffs)
-        ]
-        norm = math.sqrt(sum(v * v for v in mfcc)) or 1.0
-        return [v / norm for v in mfcc]
-
-    @staticmethod
-    def cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
-        if len(a) != len(b) or not a:
-            return 0.0
-        dot = sum(x * y for x, y in zip(a, b))
-        na = math.sqrt(sum(x * x for x in a))
-        nb = math.sqrt(sum(y * y for y in b))
-        if na == 0.0 or nb == 0.0:
-            return 0.0
-        return max(-1.0, min(1.0, dot / (na * nb)))
-
-    def enroll(self, samples: Sequence[float]) -> list[float]:
-        vec = self.extract_mfcc_vector(samples, self.sample_rate)
-        self._enrolled_vector = vec
-        self.profile_path.parent.mkdir(parents=True, exist_ok=True)
-        self.profile_path.write_text(",".join(f"{v:.6f}" for v in vec), encoding="utf-8")
-        return vec
-
-    def load_profile(self) -> list[float] | None:
-        if self._enrolled_vector is not None:
-            return self._enrolled_vector
-        if self.profile_path.exists():
-            raw = self.profile_path.read_text(encoding="utf-8").strip()
-            self._enrolled_vector = [float(x) for x in raw.split(",") if x]
-        return self._enrolled_vector
-
-    def verify(self, candidate_samples: Sequence[float]) -> Tuple[bool, float]:
-        enrolled = self.load_profile()
-        if not enrolled:
-            return False, 0.0
-        candidate_vec = self.extract_mfcc_vector(candidate_samples, self.sample_rate)
-        score = self.cosine_similarity(enrolled, candidate_vec)
-        return score >= self.threshold, score
-
-    def capture_microphone_seconds(self, seconds: float = 3.0) -> list[float]:
-        import sounddevice as sd  # type: ignore
-
-        frames = int(seconds * self.sample_rate)
-        recording = sd.rec(frames, samplerate=self.sample_rate, channels=1, dtype="float32")
-        sd.wait()
-        return [float(x[0]) for x in recording]
-`,
-  },
-  {
-    path: "windows_notch_pro/security/audit_logger.py",
-    group: "Sandbox & Security",
-    language: "python",
-    summary:
-      "Thread-safe structured JSONL audit log (audit.jsonl) recording every unlock attempt, folder change, app launch/close, memory recall, and mouse automation event with SHA-256 hash chaining.",
-    content: `"""Structured Append-Only JSONL Audit Logger (audit.jsonl)."""
-from __future__ import annotations
-
-from datetime import datetime, timezone
-import hashlib
-import json
-from pathlib import Path
-import threading
-
-
-class AuditLogger:
-    """Appends hash-chained JSONL records for every security and automation action."""
-
-    def __init__(self, log_path: Path) -> None:
-        self.log_path = Path(log_path)
-        self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.Lock()
-        self._prev_hash = "0" * 16
-
-    def log(self, category: str, event: str, status: str, detail: str, actor: str = "notch_ai") -> dict:
-        with self._lock:
-            record = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "category": category,
-                "event": event,
-                "status": status,
-                "detail": detail,
-                "actor": actor,
-                "prev_hash": self._prev_hash,
+        try
+        {
+            int rc = notch_dpapi_protect(plaintext, (uint)plaintext.Length, out cipherPtr, out cipherLen);
+            if (rc != 0 || cipherPtr == IntPtr.Zero || cipherLen == 0)
+            {
+                throw new CryptographicException($"Native DPAPI CryptProtectData failed (code {rc}).");
             }
-            payload = json.dumps(record, sort_keys=True, separators=(",", ":"))
-            entry_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
-            record["entry_hash"] = entry_hash
-            self._prev_hash = entry_hash
 
-            with self.log_path.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(record) + "\\n")
-            return record
+            var managed = new byte[cipherLen];
+            Marshal.Copy(cipherPtr, managed, 0, (int)cipherLen);
+            return managed;
+        }
+        finally
+        {
+            if (cipherPtr != IntPtr.Zero)
+            {
+                notch_dpapi_free(cipherPtr, cipherLen);
+            }
+        }
+    }
+
+    public static byte[] UnprotectBytes(byte[] cipher)
+    {
+        if (cipher.Length == 0) return Array.Empty<byte>();
+        IntPtr plainPtr = IntPtr.Zero;
+        uint plainLen = 0;
+
+        try
+        {
+            int rc = notch_dpapi_unprotect(cipher, (uint)cipher.Length, out plainPtr, out plainLen);
+            if (rc != 0 || plainPtr == IntPtr.Zero || plainLen == 0)
+            {
+                throw new CryptographicException($"Native DPAPI CryptUnprotectData failed (code {rc}).");
+            }
+
+            var managed = new byte[plainLen];
+            Marshal.Copy(plainPtr, managed, 0, (int)plainLen);
+            return managed;
+        }
+        finally
+        {
+            if (plainPtr != IntPtr.Zero)
+            {
+                notch_dpapi_free(plainPtr, plainLen);
+            }
+        }
+    }
+
+    public static string? SendUnlockPipeRequest(string jsonPayload, string pipeName = @"\\.\pipe\WindowsNotchUnlock")
+    {
+        var payloadBytes = Encoding.UTF8.GetBytes(jsonPayload);
+        var responseBuf = new byte[2048];
+        try
+        {
+            int rc = notch_pipe_send_unlock_request(
+                pipeName,
+                payloadBytes,
+                (uint)payloadBytes.Length,
+                responseBuf,
+                (uint)responseBuf.Length,
+                out uint respLen);
+
+            if (rc != 0 || respLen == 0) return null;
+            return Encoding.UTF8.GetString(responseBuf, 0, (int)respLen);
+        }
+        catch (DllNotFoundException)
+        {
+            return null;
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(payloadBytes);
+            CryptographicOperations.ZeroMemory(responseBuf);
+        }
+    }
+}
 `,
   },
   {
-    path: "windows_notch_pro/service/notch_lock_service.py",
-    group: "Session-0 Service & C++ CredProvider",
-    language: "python",
+    path: "Services/SafeFileManager.cs",
+    group: "C# Core Services & Security",
+    language: "csharp",
     summary:
-      "Session-0 Windows Service (LocalSystem) keeping voice listening active after LockWorkStation() and transmitting 2FA-verified DPAPI unlock payloads over DACL-protected Named Pipe \\\\.\\pipe\\WindowsNotchUnlock.",
-    content: `"""Session-0 Windows Service (LocalSystem) for Lock-Screen 2FA Voice Unlock."""
-from __future__ import annotations
+      "Sandboxed Desktop/Documents/Downloads folder manager with traversal/symlink blocking and Windows Recycle Bin soft-delete via Microsoft.VisualBasic.FileIO.",
+    content: String.raw`using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Microsoft.VisualBasic.FileIO;
 
-import json
-from pathlib import Path
-import threading
-import time
+namespace WindowsNotchPro.Services;
 
-PIPE_NAME = r"\\\\.\\pipe\\WindowsNotchUnlock"
+public sealed class SafeFileManager
+{
+    private readonly AuditLogger _audit;
+    private readonly Dictionary<string, string> _allowedRoots;
 
+    private static readonly HashSet<string> ReservedWindowsNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "CON", "PRN", "AUX", "NUL",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+    };
 
-def send_unlock_payload_to_pipe(username: str, password: str) -> bool:
-    """Transmit verified credentials over DACL-protected Named Pipe to ICredentialProvider."""
-    import win32file  # type: ignore
+    public SafeFileManager(AuditLogger audit)
+    {
+        _audit = audit;
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        _allowedRoots = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Desktop"] = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)),
+            ["Documents"] = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)),
+            ["Downloads"] = Path.GetFullPath(Path.Combine(profile, "Downloads")),
+        };
+    }
 
-    handle = win32file.CreateFile(
-        PIPE_NAME,
-        win32file.GENERIC_WRITE,
-        0,
-        None,
-        win32file.OPEN_EXISTING,
-        0,
-        None,
-    )
-    try:
-        payload = json.dumps({"username": username, "password": password}).encode("utf-8")
-        win32file.WriteFile(handle, payload)
-        return True
-    finally:
-        win32file.CloseHandle(handle)
+    public (bool Ok, string Message) CreateFolder(string folderName, string rootName = "Desktop")
+    {
+        var check = ResolveSafeFolderPath(folderName, rootName);
+        if (!check.Allowed)
+        {
+            _audit.Log("folder", "folder_create", "blocked", check.Error);
+            return (false, check.Error);
+        }
 
+        if (Directory.Exists(check.FullPath))
+        {
+            return (false, $"Folder '{check.CleanName}' already exists in {check.NormalizedRoot}.");
+        }
 
-try:
-    import servicemanager  # type: ignore
-    import win32event  # type: ignore
-    import win32service  # type: ignore
-    import win32serviceutil  # type: ignore
+        Directory.CreateDirectory(check.FullPath);
+        _audit.Log("folder", "folder_create", "allowed", $"{check.NormalizedRoot}\\{check.CleanName}");
+        return (true, $"Created folder '{check.CleanName}' in {check.NormalizedRoot}.");
+    }
 
-    class WindowsNotchLockService(win32serviceutil.ServiceFramework):
-        _svc_name_ = "WindowsNotchProLockSvc"
-        _svc_display_name_ = "WindowsNotch Pro Lock-Screen Voice Unlock Service"
-        _svc_description_ = (
-            "Maintains Session-0 offline 2FA voice unlock listening after LockWorkStation() "
-            "and submits DPAPI credentials over DACL-protected Named Pipe to Winlogon."
-        )
+    public (bool Ok, string Message) RenameFolder(string oldName, string newName, string rootName = "Desktop")
+    {
+        var oldCheck = ResolveSafeFolderPath(oldName, rootName);
+        if (!oldCheck.Allowed)
+        {
+            _audit.Log("folder", "folder_rename", "blocked", oldCheck.Error);
+            return (false, oldCheck.Error);
+        }
 
-        def __init__(self, args):
-            super().__init__(args)
-            self.stop_event = win32event.CreateEvent(None, 0, 0, None)
-            self._running = True
+        var newCheck = ResolveSafeFolderPath(newName, rootName);
+        if (!newCheck.Allowed)
+        {
+            _audit.Log("folder", "folder_rename", "blocked", newCheck.Error);
+            return (false, newCheck.Error);
+        }
 
-        def SvcStop(self):
-            self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
-            self._running = False
-            win32event.SetEvent(self.stop_event)
+        if (!Directory.Exists(oldCheck.FullPath))
+        {
+            return (false, $"Folder '{oldCheck.CleanName}' was not found in {oldCheck.NormalizedRoot}.");
+        }
 
-        def SvcDoRun(self):
-            servicemanager.LogMsg(
-                servicemanager.EVENTLOG_INFORMATION_TYPE,
-                servicemanager.PYS_SERVICE_STARTED,
-                (self._svc_name_, ""),
-            )
-            self._main_loop()
+        if (IsReparsePoint(oldCheck.FullPath))
+        {
+            const string symlinkErr = "Blocked: symlink or junction folders cannot be modified.";
+            _audit.Log("folder", "folder_rename", "blocked", symlinkErr);
+            return (false, symlinkErr);
+        }
 
-        def _main_loop(self):
-            from windows_notch_pro.security.audit_logger import AuditLogger
-            from windows_notch_pro.security.crypto_vault import SecurityVault
-            from windows_notch_pro.security.voiceprint import VoiceprintVerifier
+        if (Directory.Exists(newCheck.FullPath))
+        {
+            return (false, $"A folder named '{newCheck.CleanName}' already exists in {newCheck.NormalizedRoot}.");
+        }
 
-            data_dir = Path(r"C:\\ProgramData\\WindowsNotchPro")
-            audit = AuditLogger(data_dir / "audit.jsonl")
-            vault = SecurityVault(data_dir / "vault.json", audit_logger=audit)
-            verifier = VoiceprintVerifier(data_dir / "voiceprint.npz")
+        Directory.Move(oldCheck.FullPath, newCheck.FullPath);
+        _audit.Log("folder", "folder_rename", "allowed", $"{oldCheck.NormalizedRoot}\\{oldCheck.CleanName} -> {newCheck.CleanName}");
+        return (true, $"Renamed '{oldCheck.CleanName}' to '{newCheck.CleanName}' in {oldCheck.NormalizedRoot}.");
+    }
 
-            audit.log("security", "session0_service_online", "allowed", "LocalSystem voice listener active")
-            while self._running:
-                # Session-0 loop listens for wake-word + passphrase + 3s audio sample,
-                # verifies PBKDF2 + MFCC cosine similarity, then calls send_unlock_payload_to_pipe().
-                time.sleep(1.0)
+    public (bool Ok, string Message) DeleteFolder(string folderName, string rootName = "Desktop")
+    {
+        var check = ResolveSafeFolderPath(folderName, rootName);
+        if (!check.Allowed)
+        {
+            _audit.Log("folder", "folder_delete", "blocked", check.Error);
+            return (false, check.Error);
+        }
 
-    if __name__ == "__main__":
-        win32serviceutil.HandleCommandLine(WindowsNotchLockService)
-except ImportError:
-    pass
+        if (!Directory.Exists(check.FullPath))
+        {
+            return (false, $"Folder '{check.CleanName}' was not found in {check.NormalizedRoot}.");
+        }
+
+        if (IsReparsePoint(check.FullPath))
+        {
+            const string symlinkErr = "Blocked: symlink or junction folders cannot be deleted.";
+            _audit.Log("folder", "folder_delete", "blocked", symlinkErr);
+            return (false, symlinkErr);
+        }
+
+        // Soft-delete strictly to Windows Recycle Bin (never permanent Directory.Delete)
+        FileSystem.DeleteDirectory(
+            check.FullPath,
+            UIOption.OnlyErrorDialogs,
+            RecycleOption.SendToRecycleBin);
+
+        _audit.Log("folder", "folder_soft_delete", "allowed", $"Recycle Bin <- {check.NormalizedRoot}\\{check.CleanName}");
+        return (true, $"Moved '{check.CleanName}' from {check.NormalizedRoot} to the Recycle Bin.");
+    }
+
+    public IReadOnlyList<string> ListFolders(string rootName = "Desktop")
+    {
+        if (!_allowedRoots.TryGetValue(rootName, out var rootPath) || !Directory.Exists(rootPath))
+        {
+            return Array.Empty<string>();
+        }
+
+        return Directory.EnumerateDirectories(rootPath)
+            .Select(Path.GetFileName)
+            .Where(name => !string.IsNullOrEmpty(name))
+            .Cast<string>()
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private (bool Allowed, string FullPath, string CleanName, string NormalizedRoot, string Error)
+        ResolveSafeFolderPath(string rawName, string rawRoot)
+    {
+        var rootKey = string.IsNullOrWhiteSpace(rawRoot) ? "Desktop" : rawRoot.Trim();
+        if (!_allowedRoots.TryGetValue(rootKey, out var rootFull))
+        {
+            return (false, string.Empty, string.Empty, string.Empty,
+                "Sandbox policy only allows Desktop, Documents, or Downloads.");
+        }
+
+        var normalizedRoot = _allowedRoots.Keys.First(k => k.Equals(rootKey, StringComparison.OrdinalIgnoreCase));
+        var name = (rawName ?? string.Empty).Trim();
+
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 120)
+        {
+            return (false, string.Empty, string.Empty, normalizedRoot, "Folder name is empty or exceeds 120 characters.");
+        }
+
+        if (name.Contains("..") || name.Contains('/') || name.Contains('\\') || name.Contains(':'))
+        {
+            return (false, string.Empty, string.Empty, normalizedRoot,
+                "Blocked: path traversal, drive letters, and alternate data streams are prohibited.");
+        }
+
+        if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || name.EndsWith('.') || name.EndsWith(' '))
+        {
+            return (false, string.Empty, string.Empty, normalizedRoot, "Folder name contains invalid Windows characters.");
+        }
+
+        var stem = name.Split('.')[0];
+        if (ReservedWindowsNames.Contains(stem))
+        {
+            return (false, string.Empty, string.Empty, normalizedRoot, $"Blocked: '{stem}' is a reserved Windows device name.");
+        }
+
+        var rootWithSep = rootFull.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var candidate = Path.GetFullPath(Path.Combine(rootFull, name));
+
+        if (!candidate.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase))
+        {
+            return (false, string.Empty, string.Empty, normalizedRoot, "Blocked: resolved path escaped sandbox root.");
+        }
+
+        return (true, candidate, name, normalizedRoot, string.Empty);
+    }
+
+    private static bool IsReparsePoint(string path)
+    {
+        var attrs = File.GetAttributes(path);
+        return (attrs & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint;
+    }
+}
 `,
   },
   {
-    path: "credential_provider/NotchCredentialProvider.h",
-    group: "Session-0 Service & C++ CredProvider",
-    language: "cpp",
+    path: "Services/SafeAppManager.cs",
+    group: "C# Core Services & Security",
+    language: "csharp",
     summary:
-      "C++ COM header for WindowsNotchPro ICredentialProvider & ICredentialProviderCredential interfaces.",
-    content: `#pragma once
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <credentialprovider.h>
-#include <sddl.h>
-#include <atomic>
-#include <string>
-#include <thread>
+      "Allowlisted app launcher, graceful process closer, and running process inspector that protects critical Windows OS processes.",
+    content: String.raw`using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 
-// {8E4C7A91-3B52-4D9F-A7D2-9F0E5C4B2026}
-static const GUID CLSID_WindowsNotchCredentialProvider =
-{ 0x8e4c7a91, 0x3b52, 0x4d9f, { 0xa7, 0xd2, 0x9f, 0x0e, 0x5c, 0x4b, 0x20, 0x26 } };
+namespace WindowsNotchPro.Services;
 
-static constexpr wchar_t kNotchPipeName[] = L"\\\\\\\\.\\\\pipe\\\\WindowsNotchUnlock";
-// DACL SDDL: Allow Full Control ONLY to LocalSystem (SY) and Built-in Administrators (BA)
-static constexpr wchar_t kNotchPipeSddl[] = L"D:(A;;GA;;;SY)(A;;GA;;;BA)";
+public sealed class SafeAppManager
+{
+    private readonly AuditLogger _audit;
 
-class NotchCredentialProvider : public ICredentialProvider {
-public:
-    NotchCredentialProvider();
-    virtual ~NotchCredentialProvider();
+    private static readonly HashSet<string> ProtectedProcesses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "lsass", "csrss", "winlogon", "wininit", "smss", "services",
+        "svchost", "explorer", "dwm", "system", "idle", "registry",
+        "fontdrvhost", "audiodg", "spoolsv", "taskmgr", "securityhealthservice"
+    };
 
-    IFACEMETHODIMP_(ULONG) AddRef() override;
-    IFACEMETHODIMP_(ULONG) Release() override;
-    IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv) override;
+    private static readonly Dictionary<string, (string FileName, string DisplayName)> AllowedLaunchMap =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["chrome"] = ("chrome.exe", "Google Chrome"),
+            ["google chrome"] = ("chrome.exe", "Google Chrome"),
+            ["edge"] = ("msedge.exe", "Microsoft Edge"),
+            ["microsoft edge"] = ("msedge.exe", "Microsoft Edge"),
+            ["notepad"] = ("notepad.exe", "Notepad"),
+            ["calculator"] = ("calc.exe", "Calculator"),
+            ["calc"] = ("calc.exe", "Calculator"),
+            ["terminal"] = ("wt.exe", "Windows Terminal"),
+            ["windows terminal"] = ("wt.exe", "Windows Terminal"),
+            ["powershell"] = ("powershell.exe", "PowerShell"),
+            ["vscode"] = ("code", "Visual Studio Code"),
+            ["vs code"] = ("code", "Visual Studio Code"),
+            ["code"] = ("code", "Visual Studio Code"),
+            ["explorer"] = ("explorer.exe", "File Explorer"),
+            ["file explorer"] = ("explorer.exe", "File Explorer"),
+            ["paint"] = ("mspaint.exe", "Paint"),
+            ["settings"] = ("ms-settings:", "Windows Settings"),
+        };
 
-    IFACEMETHODIMP SetUsageScenario(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus, DWORD dwFlags) override;
-    IFACEMETHODIMP SetSerialization(const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION* pcpcs) override;
-    IFACEMETHODIMP Advise(ICredentialProviderEvents* pcpe, UINT_PTR upAdviseContext) override;
-    IFACEMETHODIMP UnAdvise() override;
-    IFACEMETHODIMP GetFieldDescriptorCount(DWORD* pdwCount) override;
-    IFACEMETHODIMP GetFieldDescriptorAt(DWORD dwIndex, CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR** ppcpfd) override;
-    IFACEMETHODIMP GetCredentialCount(DWORD* pdwCount, DWORD* pdwDefault, BOOL* pbAutoLogonWithDefault) override;
-    IFACEMETHODIMP GetCredentialAt(DWORD dwIndex, ICredentialProviderCredential** ppcpc) override;
+    public SafeAppManager(AuditLogger audit)
+    {
+        _audit = audit;
+    }
 
-private:
-    void PipeListenerLoop();
+    public (bool Ok, string Message) OpenApp(string appQuery)
+    {
+        var key = (appQuery ?? string.Empty).Trim();
+        if (!AllowedLaunchMap.TryGetValue(key, out var target))
+        {
+            var blockedMsg = $"Blocked: '{key}' is not in the approved Windows application allowlist.";
+            _audit.Log("app", "app_open", "blocked", blockedMsg);
+            return (false, blockedMsg);
+        }
 
-    std::atomic<LONG> _refCount{1};
-    std::atomic<bool> _stopPipe{false};
-    std::atomic<bool> _hasAutoUnlock{false};
-    std::thread _pipeThread;
-    ICredentialProviderEvents* _events = nullptr;
-    UINT_PTR _adviseContext = 0;
-    CREDENTIAL_PROVIDER_USAGE_SCENARIO _usage = CPUS_INVALID;
-    std::wstring _pendingUser;
-    std::wstring _pendingPass;
-};
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = target.FileName,
+                UseShellExecute = true,
+            };
+            Process.Start(psi);
+            _audit.Log("app", "app_open", "allowed", $"Launched {target.DisplayName} ({target.FileName})");
+            return (true, $"Opened {target.DisplayName}.");
+        }
+        catch (Exception ex)
+        {
+            var err = $"Could not launch {target.DisplayName}: {ex.Message}";
+            _audit.Log("app", "app_open", "warning", err);
+            return (false, err);
+        }
+    }
+
+    public (bool Ok, string Message) CloseApp(string processQuery)
+    {
+        var raw = (processQuery ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(raw))
+        {
+            return (false, "Specify an application name to close.");
+        }
+
+        // Resolve friendly aliases first (e.g., "VS Code" -> "code")
+        var normalized = raw;
+        if (AllowedLaunchMap.TryGetValue(raw, out var mapped))
+        {
+            normalized = mapped.FileName;
+        }
+        if (normalized.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized[..^4];
+        }
+
+        if (ProtectedProcesses.Contains(normalized))
+        {
+            var msg = $"Blocked: '{normalized}.exe' is a critical Windows system process and cannot be closed.";
+            _audit.Log("security", "protected_process_block", "blocked", msg);
+            return (false, msg);
+        }
+
+        var matches = Process.GetProcessesByName(normalized);
+        if (matches.Length == 0)
+        {
+            return (false, $"No running process matched '{normalized}.exe'.");
+        }
+
+        int closedCount = 0;
+        foreach (var proc in matches)
+        {
+            try
+            {
+                if (proc.CloseMainWindow())
+                {
+                    if (!proc.WaitForExit(1800))
+                    {
+                        proc.Kill(entireProcessTree: false);
+                    }
+                }
+                else
+                {
+                    proc.Kill(entireProcessTree: false);
+                }
+                closedCount++;
+            }
+            catch
+            {
+                // Skip elevated or already-exited instances
+            }
+            finally
+            {
+                proc.Dispose();
+            }
+        }
+
+        _audit.Log("app", "app_close", "allowed", $"Closed {closedCount} instance(s) of {normalized}.exe");
+        return (true, $"Closed {normalized}.exe ({closedCount} instance{(closedCount == 1 ? "" : "s")}).");
+    }
+
+    public IReadOnlyList<(string Name, int Pid, long MemoryMb, bool IsProtected)> ListRunningApps(int maxCount = 20)
+    {
+        return Process.GetProcesses()
+            .Where(p => !string.IsNullOrWhiteSpace(p.MainWindowTitle))
+            .OrderByDescending(p => SafeGetMemory(p))
+            .Take(maxCount)
+            .Select(p =>
+            {
+                var name = p.ProcessName;
+                var mem = SafeGetMemory(p) / (1024 * 1024);
+                var pid = p.Id;
+                p.Dispose();
+                return (name + ".exe", pid, mem, ProtectedProcesses.Contains(name));
+            })
+            .ToList();
+    }
+
+    private static long SafeGetMemory(Process p)
+    {
+        try { return p.WorkingSet64; } catch { return 0; }
+    }
+}
 `,
   },
   {
-    path: "credential_provider/NotchCredentialProvider.cpp",
-    group: "Session-0 Service & C++ CredProvider",
-    language: "cpp",
+    path: "Services/SecurityVault.cs",
+    group: "C# Core Services & Security",
+    language: "csharp",
     summary:
-      "C++ ICredentialProvider COM DLL implementation creating a DACL-protected Named Pipe (\\\\.\\pipe\\WindowsNotchUnlock) to accept 2FA-verified unlock credentials for native Winlogon submission.",
-    content: `#include "NotchCredentialProvider.h"
-#include <ntsecapi.h>
-#include <shlwapi.h>
+      "2FA Security Vault implementing PBKDF2-HMAC-SHA256 (200k iterations), offline voiceprint cosine matching, 3-strike 60s lockout, and DPAPI disk sealing.",
+    content: String.raw`using System;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 
-#pragma comment(lib, "advapi32.lib")
-#pragma comment(lib, "credui.lib")
-#pragma comment(lib, "shlwapi.lib")
+namespace WindowsNotchPro.Services;
 
-NotchCredentialProvider::NotchCredentialProvider() = default;
+public sealed class SecurityVault
+{
+    public const int Pbkdf2Iterations = 200_000;
+    public const int MaxFailedAttempts = 3;
+    public const double DefaultVoiceThreshold = 0.82;
 
-NotchCredentialProvider::~NotchCredentialProvider() {
-    _stopPipe.store(true);
-    if (_pipeThread.joinable()) {
-        _pipeThread.join();
-    }
-    if (_events) {
-        _events->Release();
-        _events = nullptr;
-    }
-}
+    private readonly AuditLogger _audit;
+    private readonly string _vaultFilePath;
+    private readonly object _lock = new();
 
-IFACEMETHODIMP_(ULONG) NotchCredentialProvider::AddRef() {
-    return static_cast<ULONG>(++_refCount);
-}
+    private VaultRecord _record;
+    private int _failedAttempts;
+    private DateTimeOffset? _lockoutUntil;
 
-IFACEMETHODIMP_(ULONG) NotchCredentialProvider::Release() {
-    LONG count = --_refCount;
-    if (count == 0) {
-        delete this;
-    }
-    return static_cast<ULONG>(count);
-}
-
-IFACEMETHODIMP NotchCredentialProvider::QueryInterface(REFIID riid, void** ppv) {
-    if (!ppv) return E_INVALIDARG;
-    if (riid == IID_IUnknown || riid == IID_ICredentialProvider) {
-        *ppv = static_cast<ICredentialProvider*>(this);
-        AddRef();
-        return S_OK;
-    }
-    *ppv = nullptr;
-    return E_NOINTERFACE;
-}
-
-IFACEMETHODIMP NotchCredentialProvider::SetUsageScenario(
-    CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus, DWORD /*dwFlags*/
-) {
-    if (cpus != CPUS_LOGON && cpus != CPUS_UNLOCK_WORKSTATION) {
-        return E_NOTIMPL;
-    }
-    _usage = cpus;
-    _stopPipe.store(false);
-    if (!_pipeThread.joinable()) {
-        _pipeThread = std::thread(&NotchCredentialProvider::PipeListenerLoop, this);
-    }
-    return S_OK;
-}
-
-IFACEMETHODIMP NotchCredentialProvider::SetSerialization(
-    const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION* /*pcpcs*/
-) {
-    return S_OK;
-}
-
-IFACEMETHODIMP NotchCredentialProvider::Advise(
-    ICredentialProviderEvents* pcpe, UINT_PTR upAdviseContext
-) {
-    if (_events) _events->Release();
-    _events = pcpe;
-    if (_events) _events->AddRef();
-    _adviseContext = upAdviseContext;
-    return S_OK;
-}
-
-IFACEMETHODIMP NotchCredentialProvider::UnAdvise() {
-    if (_events) {
-        _events->Release();
-        _events = nullptr;
-    }
-    return S_OK;
-}
-
-IFACEMETHODIMP NotchCredentialProvider::GetFieldDescriptorCount(DWORD* pdwCount) {
-    *pdwCount = 1;
-    return S_OK;
-}
-
-IFACEMETHODIMP NotchCredentialProvider::GetFieldDescriptorAt(
-    DWORD dwIndex, CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR** ppcpfd
-) {
-    if (dwIndex != 0 || !ppcpfd) return E_INVALIDARG;
-    auto* desc = static_cast<CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR*>(
-        CoTaskMemAlloc(sizeof(CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR))
-    );
-    if (!desc) return E_OUTOFMEMORY;
-    desc->dwFieldID = 0;
-    desc->cpft = CPFT_LARGE_TEXT;
-    SHStrDupW(L"WindowsNotch Pro 2FA Voice Unlock", &desc->pszLabel);
-    *ppcpfd = desc;
-    return S_OK;
-}
-
-IFACEMETHODIMP NotchCredentialProvider::GetCredentialCount(
-    DWORD* pdwCount, DWORD* pdwDefault, BOOL* pbAutoLogonWithDefault
-) {
-    *pdwCount = 1;
-    *pdwDefault = 0;
-    *pbAutoLogonWithDefault = _hasAutoUnlock.load() ? TRUE : FALSE;
-    return S_OK;
-}
-
-IFACEMETHODIMP NotchCredentialProvider::GetCredentialAt(
-    DWORD /*dwIndex*/, ICredentialProviderCredential** ppcpc
-) {
-    // Production build returns a NotchCredential tile packing KERB_INTERACTIVE_UNLOCK_LOGON
-    // from _pendingUser / _pendingPass, then zeroing buffers via SecureZeroMemory().
-    *ppcpc = nullptr;
-    return E_NOTIMPL;
-}
-
-void NotchCredentialProvider::PipeListenerLoop() {
-    SECURITY_ATTRIBUTES sa{};
-    sa.nLength = sizeof(sa);
-    sa.bInheritHandle = FALSE;
-
-    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
-            kNotchPipeSddl, SDDL_REVISION_1, &sa.lpSecurityDescriptor, nullptr)) {
-        return;
+    private sealed class VaultRecord
+    {
+        public string SaltBase64 { get; set; } = string.Empty;
+        public string HashBase64 { get; set; } = string.Empty;
+        public double[] EnrolledVoiceprint { get; set; } = Array.Empty<double>();
+        public double VoiceThreshold { get; set; } = DefaultVoiceThreshold;
     }
 
-    HANDLE hPipe = CreateNamedPipeW(
-        kNotchPipeName,
-        PIPE_ACCESS_INBOUND,
-        PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
-        1,
-        0,
-        4096,
-        0,
-        &sa
-    );
-    LocalFree(sa.lpSecurityDescriptor);
-    if (hPipe == INVALID_HANDLE_VALUE) {
-        return;
+    public SecurityVault(AuditLogger audit)
+    {
+        _audit = audit;
+        var dir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "WindowsNotchPro");
+        Directory.CreateDirectory(dir);
+        _vaultFilePath = Path.Combine(dir, "vault.bin");
+        _record = LoadOrInitialize();
     }
 
-    while (!_stopPipe.load()) {
-        if (ConnectNamedPipe(hPipe, nullptr) || GetLastError() == ERROR_PIPE_CONNECTED) {
-            char buffer[2048]{};
-            DWORD bytesRead = 0;
-            if (ReadFile(hPipe, buffer, sizeof(buffer) - 1, &bytesRead, nullptr) && bytesRead > 0) {
-                // Parse JSON {"username":"...","password":"..."} from LocalSystem Session-0 service
-                _hasAutoUnlock.store(true);
-                if (_events) {
-                    _events->CredentialsChanged(_adviseContext);
+    public bool IsEnrolled => !string.IsNullOrEmpty(_record.HashBase64) && _record.EnrolledVoiceprint.Length > 0;
+
+    public int LockoutSecondsRemaining
+    {
+        get
+        {
+            lock (_lock)
+            {
+                if (_lockoutUntil is null || _lockoutUntil <= DateTimeOffset.UtcNow) return 0;
+                return (int)Math.Ceiling((_lockoutUntil.Value - DateTimeOffset.UtcNow).TotalSeconds);
+            }
+        }
+    }
+
+    public void EnrollCredentials(string passphrase, double[] voiceprintVector)
+    {
+        if (string.IsNullOrWhiteSpace(passphrase) || passphrase.Length < 8)
+        {
+            throw new ArgumentException("Passphrase must be at least 8 characters.");
+        }
+        if (voiceprintVector is null || voiceprintVector.Length < 8)
+        {
+            throw new ArgumentException("Voiceprint feature vector must contain at least 8 MFCC dimensions.");
+        }
+
+        lock (_lock)
+        {
+            var salt = RandomNumberGenerator.GetBytes(32);
+            var hash = DerivePbkdf2(passphrase, salt);
+
+            _record = new VaultRecord
+            {
+                SaltBase64 = Convert.ToBase64String(salt),
+                HashBase64 = Convert.ToBase64String(hash),
+                EnrolledVoiceprint = (double[])voiceprintVector.Clone(),
+                VoiceThreshold = DefaultVoiceThreshold,
+            };
+
+            SaveSealedRecord(_record);
+            _failedAttempts = 0;
+            _lockoutUntil = null;
+            _audit.Log("security", "vault_enrolled", "allowed", $"PBKDF2-HMAC-SHA256 ({Pbkdf2Iterations} rounds) + voiceprint sealed via DPAPI");
+        }
+    }
+
+    public (bool Verified, double Similarity, string Message) VerifyTwoFactor(string passphrase, double[] candidateVoiceprint)
+    {
+        lock (_lock)
+        {
+            if (_lockoutUntil.HasValue && _lockoutUntil.Value > DateTimeOffset.UtcNow)
+            {
+                var remaining = (int)Math.Ceiling((_lockoutUntil.Value - DateTimeOffset.UtcNow).TotalSeconds);
+                var lockMsg = $"Brute-force lockout active. Retry in {remaining}s.";
+                _audit.Log("security", "unlock_rate_limited", "blocked", lockMsg);
+                return (false, 0.0, lockMsg);
+            }
+
+            if (!IsEnrolled)
+            {
+                return (false, 0.0, "Security Vault is not enrolled yet. Configure passphrase and voiceprint first.");
+            }
+
+            var salt = Convert.FromBase64String(_record.SaltBase64);
+            var expectedHash = Convert.FromBase64String(_record.HashBase64);
+            var candidateHash = DerivePbkdf2(passphrase ?? string.Empty, salt);
+
+            bool passphraseOk = CryptographicOperations.FixedTimeEquals(expectedHash, candidateHash);
+            CryptographicOperations.ZeroMemory(candidateHash);
+
+            double similarity = ComputeCosineSimilarity(_record.EnrolledVoiceprint, candidateVoiceprint);
+            bool voiceOk = similarity >= _record.VoiceThreshold;
+
+            if (passphraseOk && voiceOk)
+            {
+                _failedAttempts = 0;
+                _lockoutUntil = null;
+                _audit.Log("security", "2fa_verified", "allowed", $"2FA verified (cosine similarity {similarity:F2})");
+                return (true, similarity, "2FA passphrase and voiceprint verified.");
+            }
+
+            _failedAttempts++;
+            if (_failedAttempts >= MaxFailedAttempts)
+            {
+                _lockoutUntil = DateTimeOffset.UtcNow.AddSeconds(60);
+                _failedAttempts = 0;
+                const string lockoutMsg = "3 failed 2FA attempts detected. Locked for 60 seconds.";
+                _audit.Log("security", "2fa_lockout_triggered", "blocked", lockoutMsg);
+                return (false, similarity, lockoutMsg);
+            }
+
+            var reason = !passphraseOk
+                ? "Passphrase mismatch."
+                : $"Voiceprint similarity {similarity:F2} below threshold {_record.VoiceThreshold:F2}.";
+
+            _audit.Log("security", "2fa_failed", "blocked", $"{reason} (attempt {_failedAttempts}/{MaxFailedAttempts})");
+            return (false, similarity, $"{reason} Attempt {_failedAttempts} of {MaxFailedAttempts}.");
+        }
+    }
+
+    private static byte[] DerivePbkdf2(string passphrase, byte[] salt)
+    {
+        var passBytes = Encoding.UTF8.GetBytes(passphrase);
+        try
+        {
+            return Rfc2898DeriveBytes.Pbkdf2(passBytes, salt, Pbkdf2Iterations, HashAlgorithmName.SHA256, 32);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(passBytes);
+        }
+    }
+
+    public static double ComputeCosineSimilarity(double[] a, double[] b)
+    {
+        if (a is null || b is null || a.Length == 0 || a.Length != b.Length) return 0.0;
+        double dot = 0, normA = 0, normB = 0;
+        for (int i = 0; i < a.Length; i++)
+        {
+            dot += a[i] * b[i];
+            normA += a[i] * a[i];
+            normB += b[i] * b[i];
+        }
+        double denom = Math.Sqrt(normA) * Math.Sqrt(normB);
+        return denom > 1e-9 ? dot / denom : 0.0;
+    }
+
+    private VaultRecord LoadOrInitialize()
+    {
+        if (File.Exists(_vaultFilePath))
+        {
+            try
+            {
+                var sealedBytes = File.ReadAllBytes(_vaultFilePath);
+                var plainBytes = NativeInterop.UnprotectBytes(sealedBytes);
+                try
+                {
+                    var loaded = JsonSerializer.Deserialize<VaultRecord>(plainBytes);
+                    if (loaded is not null) return loaded;
+                }
+                finally
+                {
+                    CryptographicOperations.ZeroMemory(plainBytes);
                 }
             }
-            SecureZeroMemory(buffer, sizeof(buffer));
-            DisconnectNamedPipe(hPipe);
+            catch (Exception ex)
+            {
+                _audit.Log("security", "vault_load_warning", "warning", ex.Message);
+            }
+        }
+
+        // Optional environment-driven bootstrap (never hardcode literal passphrases in source)
+        var envPass = Environment.GetEnvironmentVariable("NOTCH_VAULT_PASSPHRASE");
+        if (!string.IsNullOrWhiteSpace(envPass) && envPass.Length >= 8)
+        {
+            var bootstrap = new VaultRecord();
+            var salt = RandomNumberGenerator.GetBytes(32);
+            bootstrap.SaltBase64 = Convert.ToBase64String(salt);
+            bootstrap.HashBase64 = Convert.ToBase64String(DerivePbkdf2(envPass, salt));
+            bootstrap.EnrolledVoiceprint = new[] { 0.42, 0.31, 0.58, 0.27, 0.64, 0.39, 0.52, 0.44 };
+            return bootstrap;
+        }
+
+        return new VaultRecord();
+    }
+
+    private void SaveSealedRecord(VaultRecord record)
+    {
+        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(record);
+        try
+        {
+            var sealedBytes = NativeInterop.ProtectBytes(jsonBytes);
+            File.WriteAllBytes(_vaultFilePath, sealedBytes);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(jsonBytes);
         }
     }
-    CloseHandle(hPipe);
 }
 `,
   },
   {
-    path: "credential_provider/build_cred_provider.bat",
-    group: "Session-0 Service & C++ CredProvider",
-    language: "batch",
-    summary: "MSVC x64 build script compiling NotchCredentialProvider.dll for Winlogon registration.",
-    content: `@echo off
-setlocal
-echo Building WindowsNotchPro Credential Provider (x64)...
-cl.exe /nologo /LD /EHsc /O2 /W4 /DUNICODE /D_UNICODE ^
-  NotchCredentialProvider.cpp ^
-  /Fe:WindowsNotchCredProvider.dll ^
-  /link advapi32.lib ole32.lib shlwapi.lib credui.lib
-if %ERRORLEVEL% NEQ 0 (
-  echo [ERROR] Build failed. Run inside "x64 Native Tools Command Prompt for VS 2022".
-  exit /b 1
-)
-echo [OK] Built WindowsNotchCredProvider.dll
-endlocal
-`,
-  },
-  {
-    path: "tests/test_windows_notch_pro.py",
-    group: "Tests & Packaging",
-    language: "python",
+    path: "Services/AuditLogger.cs",
+    group: "C# Core Services & Security",
+    language: "csharp",
     summary:
-      "Comprehensive unittest suite verifying PBKDF2 hashing, 3-strike 60s lockout, MFCC impostor rejection, folder sandboxing, protected process guards, intent parsing, and 5-turn sliding-window memory resolution.",
-    content: `"""Comprehensive unittest suite for WindowsNotch Pro."""
-from __future__ import annotations
+      "Thread-safe, tamper-evident SHA-256 hash-chained JSONL audit logger writing to %LOCALAPPDATA%\\WindowsNotchPro\\audit.jsonl.",
+    content: String.raw`using System;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 
-import json
-import math
-from pathlib import Path
-import tempfile
-import unittest
+namespace WindowsNotchPro.Services;
 
-from windows_notch_pro.ai.intent_router import IntentRouter
-from windows_notch_pro.ai.memory_buffer import ShortTermMemoryBuffer
-from windows_notch_pro.sandbox.app_manager import SafeAppManager
-from windows_notch_pro.sandbox.folder_manager import SandboxedFolderManager
-from windows_notch_pro.security.audit_logger import AuditLogger
-from windows_notch_pro.security.crypto_vault import SecurityVault
-from windows_notch_pro.security.voiceprint import VoiceprintVerifier
+public sealed class AuditLogger
+{
+    public static AuditLogger Instance { get; } = new();
 
+    private readonly object _writeLock = new();
+    private readonly string _logPath;
+    private string _prevHash = "0000000000000000";
 
-def _make_tone(freq_hz: float, duration_s: float = 0.25, sr: int = 16000) -> list[float]:
-    n = int(duration_s * sr)
-    return [
-        0.6 * math.sin(2.0 * math.pi * freq_hz * i / sr)
-        + 0.25 * math.sin(2.0 * math.pi * (freq_hz * 2.1) * i / sr)
-        for i in range(n)
-    ]
+    private AuditLogger()
+    {
+        var dir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "WindowsNotchPro");
+        Directory.CreateDirectory(dir);
+        _logPath = Path.Combine(dir, "audit.jsonl");
+    }
 
+    public void Log(string category, string eventName, string status, string detail, string actor = "nova")
+    {
+        lock (_writeLock)
+        {
+            var timestamp = DateTimeOffset.UtcNow.ToString("O");
+            var hashInput = $"{_prevHash}|{timestamp}|{category}|{eventName}|{status}|{detail}|{actor}";
+            var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(hashInput));
+            var entryHash = Convert.ToHexString(hashBytes)[..16].ToLowerInvariant();
 
-class _FakePlatform:
-    name = "windows11"
-    locked = False
-    def lock_workstation(self):
-        self.locked = True
-        return True
-    def adjust_volume(self, delta):
-        pass
-    def speak_blocking(self, text):
-        pass
+            var payload = new
+            {
+                timestamp,
+                category,
+                @event = eventName,
+                status,
+                detail,
+                actor,
+                prevHash = _prevHash,
+                entryHash
+            };
 
-
-class _FakeMouse:
-    stopped = False
-    patrol = False
-    def start_keep_awake_patrol(self):
-        self.patrol = True
-    def emergency_stop(self):
-        self.stopped = True
-
-
-class _FakeAirMouse:
-    enabled = False
-    def start(self):
-        self.enabled = True
-    def emergency_stop(self):
-        self.enabled = False
-
-
-class _StubAppManager(SafeAppManager):
-    def open_app(self, app_name: str):
-        return True, f"Opened {app_name}."
-    def close_app(self, app_or_process: str):
-        if self.is_protected_process(app_or_process):
-            return False, f"Blocked: '{app_or_process}' is a protected Windows system process."
-        return True, f"Closed {app_or_process}."
-
-
-class TestWindowsNotchPro(unittest.TestCase):
-    def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory()
-        self.base = Path(self._tmp.name)
-        self.audit = AuditLogger(self.base / "audit.jsonl")
-        self.desktop = self.base / "Desktop"
-        self.documents = self.base / "Documents"
-        self.downloads = self.base / "Downloads"
-        for d in (self.desktop, self.documents, self.downloads):
-            d.mkdir()
-        self.folders = SandboxedFolderManager(
-            roots={"desktop": self.desktop, "documents": self.documents, "downloads": self.downloads},
-            audit_logger=self.audit,
-        )
-        self.apps = _StubAppManager(audit_logger=self.audit)
-        self.memory = ShortTermMemoryBuffer(maxlen=5)
-        self.router = IntentRouter(
-            memory=self.memory,
-            folder_manager=self.folders,
-            app_manager=self.apps,
-            mouse_controller=_FakeMouse(),
-            air_mouse=_FakeAirMouse(),
-            platform_adapter=_FakePlatform(),
-            audit_logger=self.audit,
-        )
-
-    def tearDown(self) -> None:
-        self._tmp.cleanup()
-
-    def test_pbkdf2_and_brute_force_lockout(self) -> None:
-        vault = SecurityVault(self.base / "vault.json", audit_logger=self.audit, capture_intruder=False)
-        vault.set_passphrase("aurora-delta-92")
-        self.assertTrue(vault.verify_passphrase("aurora-delta-92"))
-        self.assertFalse(vault.verify_passphrase("wrong-pass"))
-
-        # Trigger 3 failed attempts -> 60s lockout
-        now = 1000.0
-        for _ in range(3):
-            ok, _ = vault.verify_2fa_unlock("bad", voiceprint_score=0.95, now=now)
-            self.assertFalse(ok)
-        locked, rem = vault.is_locked_out(now=now + 5)
-        self.assertTrue(locked)
-        self.assertGreater(rem, 50)
-        # Even valid credentials rejected while locked out
-        ok_locked, _ = vault.verify_2fa_unlock("aurora-delta-92", voiceprint_score=0.95, now=now + 5)
-        self.assertFalse(ok_locked)
-        # Succeeds after 60s lockout expires
-        ok_after, _ = vault.verify_2fa_unlock("aurora-delta-92", voiceprint_score=0.95, now=now + 61)
-        self.assertTrue(ok_after)
-
-    def test_voiceprint_rejects_impostor(self) -> None:
-        verifier = VoiceprintVerifier(self.base / "voiceprint.txt", threshold=0.88)
-        owner_sample = _make_tone(185.0)
-        owner_verify = _make_tone(188.0)
-        impostor_sample = _make_tone(640.0)
-        verifier.enroll(owner_sample)
-
-        owner_ok, owner_score = verifier.verify(owner_verify)
-        impostor_ok, impostor_score = verifier.verify(impostor_sample)
-        self.assertTrue(owner_ok, f"Owner score too low: {owner_score}")
-        self.assertFalse(impostor_ok, f"Impostor should be rejected: {impostor_score}")
-
-    def test_folder_sandboxing_and_traversal_blocking(self) -> None:
-        ok, _ = self.folders.create_folder("QuarterlyReports", "Desktop")
-        self.assertTrue(ok)
-        self.assertTrue((self.desktop / "QuarterlyReports").is_dir())
-
-        ok_trav, _ = self.folders.create_folder("..\\\\Windows", "Desktop")
-        self.assertFalse(ok_trav)
-
-        ok_res, _ = self.folders.create_folder("CON", "Documents")
-        self.assertFalse(ok_res)
-
-        ok_root, _ = self.folders.create_folder("Test", "System32")
-        self.assertFalse(ok_root)
-
-    def test_protected_system_processes_cannot_be_terminated(self) -> None:
-        for proc in ("lsass.exe", "csrss.exe", "winlogon.exe", "svchost.exe", "explorer.exe"):
-            ok, msg = self.apps.close_app(proc)
-            self.assertFalse(ok)
-            self.assertIn("protected", msg.lower())
-
-    def test_short_term_memory_sliding_window_and_relative_references(self) -> None:
-        # 1. Open app & recall "what was that last app I opened?"
-        self.router.handle_utterance("open Calculator")
-        recall = self.router.handle_utterance("what was that last app I opened?")
-        self.assertEqual(recall.action, "memory_recall")
-        self.assertIn("Calculator", recall.reply)
-
-        # 2. Create folder -> "do that for Invoices instead"
-        self.router.handle_utterance("create folder Budget in Desktop")
-        self.assertTrue((self.desktop / "Budget").is_dir())
-
-        repeat_res = self.router.handle_utterance("do that for Invoices instead")
-        self.assertEqual(repeat_res.action, "folder_create")
-        self.assertTrue((self.desktop / "Invoices").is_dir())
-
-        # 3. Verify sliding window strictly caps at 5 items
-        self.router.handle_utterance("open Notepad")
-        self.router.handle_utterance("rename it to ArchivedInvoices")
-        self.router.handle_utterance("open Terminal")
-        self.assertEqual(len(self.memory.snapshot()), 5)
-        self.assertTrue((self.desktop / "ArchivedInvoices").is_dir())
-
-        # 4. Verify structured JSONL audit log wrote valid JSON lines
-        lines = (self.base / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()
-        self.assertGreaterEqual(len(lines), 4)
-        parsed = json.loads(lines[-1])
-        self.assertIn("entry_hash", parsed)
-
-
-if __name__ == "__main__":
-    unittest.main()
+            var line = JsonSerializer.Serialize(payload);
+            File.AppendAllText(_logPath, line + Environment.NewLine, Encoding.UTF8);
+            _prevHash = entryHash;
+        }
+    }
+}
 `,
   },
   {
-    path: "requirements.txt",
-    group: "Tests & Packaging",
-    language: "text",
-    summary: "Python runtime dependencies for Windows 10 & Windows 11 x64.",
-    content: `PyQt6>=6.7.0
-pywin32>=306; sys_platform == "win32"
-send2trash>=1.8.3
-psutil>=6.0.0
-SpeechRecognition>=3.10.4
-sounddevice>=0.4.7
-opencv-python>=4.10.0; extra == "vision"
-mediapipe>=0.10.14; extra == "vision"
-pyinstaller>=6.10.0
+    path: "Services/CommandParser.cs",
+    group: "C# Core Services & Security",
+    language: "csharp",
+    summary:
+      "Conversational command router with 20-turn sliding-window short-term memory, pronoun resolution, folder/app/mouse orchestration, and dynamic assistant renaming.",
+    content: String.raw`using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+
+namespace WindowsNotchPro.Services;
+
+public sealed record CommandResult(
+    bool Succeeded,
+    string Reply,
+    bool TriggerLockWorkstation = false,
+    bool? ToggleKeepAwake = null);
+
+public sealed record ConversationTurn(
+    DateTimeOffset Timestamp,
+    string UserInput,
+    string Action,
+    string? Target,
+    string? Root,
+    string Reply);
+
+public sealed class CommandParser
+{
+    private const int MemoryWindowSize = 20;
+
+    private readonly SafeFileManager _files;
+    private readonly SafeAppManager _apps;
+    private readonly SecurityVault _vault;
+    private readonly AuditLogger _audit;
+    private readonly Queue<ConversationTurn> _memory = new();
+
+    public string AssistantName { get; private set; } = "NOVA";
+    public IReadOnlyCollection<ConversationTurn> RecentTurns => _memory;
+
+    public CommandParser(
+        SafeFileManager files,
+        SafeAppManager apps,
+        SecurityVault vault,
+        AuditLogger audit)
+    {
+        _files = files;
+        _apps = apps;
+        _vault = vault;
+        _audit = audit;
+    }
+
+    public Task<CommandResult> ExecuteAsync(string rawPrompt)
+    {
+        var text = (rawPrompt ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(text))
+        {
+            return Task.FromResult(new CommandResult(false, "Say or type a command."));
+        }
+
+        // 1. Dynamic Assistant Renaming ("call yourself Atlas")
+        var renameSelf = Regex.Match(text, @"(?:call yourself|rename yourself to|your name is)\s+([A-Za-z0-9 _-]{2,24})", RegexOptions.IgnoreCase);
+        if (renameSelf.Success)
+        {
+            AssistantName = renameSelf.Groups[1].Value.Trim();
+            var reply = $"Got it. I will go by {AssistantName} now.";
+            Record(text, "set_assistant_name", AssistantName, null, reply);
+            return Task.FromResult(new CommandResult(true, reply));
+        }
+
+        // 2. Lock PC
+        if (Regex.IsMatch(text, @"\b(lock pc|lock workstation|lock screen|lock computer)\b", RegexOptions.IgnoreCase))
+        {
+            const string reply = "Locking your Windows workstation now.";
+            Record(text, "lock_pc", "workstation", null, reply);
+            return Task.FromResult(new CommandResult(true, reply, TriggerLockWorkstation: true));
+        }
+
+        // 3. Keep-Awake / Coffee Mouse Patrol
+        if (Regex.IsMatch(text, @"\b(keep awake|coffee on|start patrol|start mouse patrol)\b", RegexOptions.IgnoreCase))
+        {
+            const string reply = "Keep-awake patrol enabled. Press Escape anytime for emergency stop.";
+            Record(text, "mouse_patrol", "on", null, reply);
+            return Task.FromResult(new CommandResult(true, reply, ToggleKeepAwake: true));
+        }
+
+        if (Regex.IsMatch(text, @"\b(stop patrol|coffee off|stop mouse|emergency stop)\b", RegexOptions.IgnoreCase))
+        {
+            NativeInterop.TriggerEmergencyStop();
+            const string reply = "Mouse automation halted immediately.";
+            Record(text, "mouse_stop", "off", null, reply);
+            return Task.FromResult(new CommandResult(true, reply, ToggleKeepAwake: false));
+        }
+
+        // 4. Create Folder ("create folder Q4 Reports on Desktop")
+        var createMatch = Regex.Match(text, @"create\s+(?:a\s+)?folder\s+(?:named\s+)?['""]?([^'""]+?)['""]?(?:\s+(?:on|in)\s+(Desktop|Documents|Downloads))?$", RegexOptions.IgnoreCase);
+        if (createMatch.Success)
+        {
+            var folder = createMatch.Groups[1].Value.Trim();
+            var root = createMatch.Groups[2].Success ? createMatch.Groups[2].Value : "Desktop";
+            var res = _files.CreateFolder(folder, root);
+            Record(text, "folder_create", folder, root, res.Message);
+            return Task.FromResult(new CommandResult(res.Ok, res.Message));
+        }
+
+        // 5. Rename Folder (supports pronoun "rename it to Archive")
+        var renameFolderMatch = Regex.Match(text, @"rename\s+(?:folder\s+)?['""]?([^'""]+?)['""]?\s+to\s+['""]?([^'""]+?)['""]?(?:\s+(?:on|in)\s+(Desktop|Documents|Downloads))?$", RegexOptions.IgnoreCase);
+        if (renameFolderMatch.Success)
+        {
+            var oldName = renameFolderMatch.Groups[1].Value.Trim();
+            var newName = renameFolderMatch.Groups[2].Value.Trim();
+            var root = renameFolderMatch.Groups[3].Success ? renameFolderMatch.Groups[3].Value : "Desktop";
+
+            if (oldName.Equals("it", StringComparison.OrdinalIgnoreCase) || oldName.Equals("that folder", StringComparison.OrdinalIgnoreCase))
+            {
+                var lastFolder = FindLastFolderTurn();
+                if (lastFolder is null || string.IsNullOrEmpty(lastFolder.Target))
+                {
+                    return Task.FromResult(new CommandResult(false, "I don't see a recent folder in short-term memory to rename."));
+                }
+                oldName = lastFolder.Target;
+                root = lastFolder.Root ?? root;
+            }
+
+            var res = _files.RenameFolder(oldName, newName, root);
+            Record(text, "folder_rename", res.Ok ? newName : oldName, root, res.Message);
+            return Task.FromResult(new CommandResult(res.Ok, res.Message));
+        }
+
+        // 6. Delete Folder (Recycle Bin only; supports "delete it")
+        var deleteMatch = Regex.Match(text, @"(?:delete|remove|trash)\s+(?:folder\s+)?['""]?([^'""]+?)['""]?(?:\s+(?:from|on|in)\s+(Desktop|Documents|Downloads))?$", RegexOptions.IgnoreCase);
+        if (deleteMatch.Success)
+        {
+            var target = deleteMatch.Groups[1].Value.Trim();
+            var root = deleteMatch.Groups[2].Success ? deleteMatch.Groups[2].Value : "Desktop";
+
+            if (target.Equals("it", StringComparison.OrdinalIgnoreCase) || target.Equals("that folder", StringComparison.OrdinalIgnoreCase))
+            {
+                var lastFolder = FindLastFolderTurn();
+                if (lastFolder is null || string.IsNullOrEmpty(lastFolder.Target))
+                {
+                    return Task.FromResult(new CommandResult(false, "Which folder should I move to the Recycle Bin?"));
+                }
+                target = lastFolder.Target;
+                root = lastFolder.Root ?? root;
+            }
+
+            var res = _files.DeleteFolder(target, root);
+            Record(text, "folder_delete", target, root, res.Message);
+            return Task.FromResult(new CommandResult(res.Ok, res.Message));
+        }
+
+        // 7. Open / Close / List Apps
+        var openApp = Regex.Match(text, @"^(?:open|launch|start)\s+(.+)$", RegexOptions.IgnoreCase);
+        if (openApp.Success)
+        {
+            var app = openApp.Groups[1].Value.Trim();
+            var res = _apps.OpenApp(app);
+            Record(text, "app_open", app, null, res.Message);
+            return Task.FromResult(new CommandResult(res.Ok, res.Message));
+        }
+
+        var closeApp = Regex.Match(text, @"^(?:close|quit|kill|exit)\s+(.+)$", RegexOptions.IgnoreCase);
+        if (closeApp.Success)
+        {
+            var app = closeApp.Groups[1].Value.Trim();
+            if (app.Equals("it", StringComparison.OrdinalIgnoreCase))
+            {
+                var lastApp = _memory.Reverse().FirstOrDefault(t => t.Action == "app_open");
+                if (lastApp?.Target is not null) app = lastApp.Target;
+            }
+            var res = _apps.CloseApp(app);
+            Record(text, "app_close", app, null, res.Message);
+            return Task.FromResult(new CommandResult(res.Ok, res.Message));
+        }
+
+        if (Regex.IsMatch(text, @"\b(list apps|running apps|what is open)\b", RegexOptions.IgnoreCase))
+        {
+            var running = _apps.ListRunningApps(6);
+            var summary = running.Count == 0
+                ? "No desktop windows are currently open."
+                : "Running apps: " + string.Join(", ", running.Select(a => $"{a.Name} ({a.MemoryMb} MB)"));
+            Record(text, "app_list", null, null, summary);
+            return Task.FromResult(new CommandResult(true, summary));
+        }
+
+        // 8. Smooth Mouse Move ("move mouse to 600 400")
+        var mouseMove = Regex.Match(text, @"move mouse(?: to)?\s+(\d{1,4})[,\s]+(\d{1,4})", RegexOptions.IgnoreCase);
+        if (mouseMove.Success)
+        {
+            int x = int.Parse(mouseMove.Groups[1].Value);
+            int y = int.Parse(mouseMove.Groups[2].Value);
+            NativeInterop.ResetEmergencyStop();
+            bool ok = NativeInterop.MoveMouseSmooth(x, y, 360);
+            var msg = ok ? $"Moved cursor smoothly to ({x}, {y})." : "Mouse move halted or native DLL unavailable.";
+            Record(text, "mouse_move", $"{x},{y}", null, msg);
+            return Task.FromResult(new CommandResult(ok, msg));
+        }
+
+        // 9. Vault Status / Help
+        if (Regex.IsMatch(text, @"\b(vault|security status|2fa)\b", RegexOptions.IgnoreCase))
+        {
+            var status = _vault.IsEnrolled
+                ? "2FA Security Vault is armed (PBKDF2 200k + voiceprint + DPAPI)."
+                : "Security Vault needs first-time passphrase and voiceprint enrollment.";
+            Record(text, "vault_status", null, null, status);
+            return Task.FromResult(new CommandResult(true, status));
+        }
+
+        var fallback = $"I heard '{text}'. Try 'Open Chrome', 'Create folder Invoices on Desktop', 'Close Notepad', 'Coffee on', or 'Lock PC'.";
+        Record(text, "general", null, null, fallback);
+        _audit.Log("system", "command_fallback", "info", text);
+        return Task.FromResult(new CommandResult(true, fallback));
+    }
+
+    private ConversationTurn? FindLastFolderTurn() =>
+        _memory.Reverse().FirstOrDefault(t => t.Action is "folder_create" or "folder_rename");
+
+    private void Record(string user, string action, string? target, string? root, string reply)
+    {
+        if (_memory.Count >= MemoryWindowSize)
+        {
+            _memory.Dequeue();
+        }
+        _memory.Enqueue(new ConversationTurn(DateTimeOffset.UtcNow, user, action, target, root, reply));
+    }
+}
 `,
   },
   {
-    path: "WindowsNotchPro.bat",
-    group: "Tests & Packaging",
-    language: "batch",
-    summary: "One-click Windows launcher creating a local venv if needed and launching WindowsNotch Pro.",
-    content: `@echo off
-setlocal
-cd /d "%~dp0"
+    path: "Services/CompanionServer.cs",
+    group: "C# Core Services & Security",
+    language: "csharp",
+    summary:
+      "Loopback-only HTTP + WebSocket listener with CSPRNG Bearer token authentication, bounded frame limits, and direct routing for the Kotlin companion.",
+    content: String.raw`using System;
+using System.IO;
+using System.Net;
+using System.Net.WebSockets;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 
-if not exist ".venv\\Scripts\\python.exe" (
-  echo [WindowsNotch Pro] Creating isolated Python virtual environment...
-  python -m venv .venv
-  .venv\\Scripts\\pip.exe install --upgrade pip
-  .venv\\Scripts\\pip.exe install -r requirements.txt
-)
+namespace WindowsNotchPro.Services;
 
-start "" ".venv\\Scripts\\pythonw.exe" -m windows_notch_pro.main
-endlocal
+public sealed class CompanionServer : IDisposable
+{
+    private const int MaxPayloadBytes = 16 * 1024;
+
+    private readonly CommandParser _parser;
+    private readonly SecurityVault _vault;
+    private readonly AuditLogger _audit;
+    private readonly HttpListener _listener = new();
+    private readonly CancellationTokenSource _cts = new();
+    private readonly byte[] _authTokenBytes;
+
+    public string ListenUrl { get; }
+    public string PairingToken { get; }
+    public event Action<string>? OnCommandExecuted;
+
+    public CompanionServer(CommandParser parser, SecurityVault vault, AuditLogger audit, int port = 17420)
+    {
+        _parser = parser;
+        _vault = vault;
+        _audit = audit;
+        ListenUrl = $"http://127.0.0.1:{port}/";
+
+        // Generate a cryptographically strong 256-bit runtime pairing token (or read NOTCH_COMPANION_TOKEN)
+        var envToken = Environment.GetEnvironmentVariable("NOTCH_COMPANION_TOKEN");
+        PairingToken = !string.IsNullOrWhiteSpace(envToken) && envToken.Length >= 24
+            ? envToken.Trim()
+            : Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+
+        _authTokenBytes = Encoding.UTF8.GetBytes(PairingToken);
+        _listener.Prefixes.Add(ListenUrl);
+    }
+
+    public void Start()
+    {
+        try
+        {
+            _listener.Start();
+            _ = Task.Run(() => AcceptLoopAsync(_cts.Token));
+        }
+        catch (Exception ex)
+        {
+            _audit.Log("system", "companion_start_failed", "warning", ex.Message);
+        }
+    }
+
+    private async Task AcceptLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested && _listener.IsListening)
+        {
+            try
+            {
+                var ctx = await _listener.GetContextAsync();
+                _ = Task.Run(() => HandleContextAsync(ctx, ct), ct);
+            }
+            catch (HttpListenerException)
+            {
+                break;
+            }
+            catch (ObjectDisposedException)
+            {
+                break;
+            }
+        }
+    }
+
+    private bool IsAuthorized(HttpListenerRequest req)
+    {
+        var header = req.Headers["Authorization"];
+        if (string.IsNullOrWhiteSpace(header) || !header.StartsWith("Bearer ", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var suppliedBytes = Encoding.UTF8.GetBytes(header["Bearer ".Length..].Trim());
+        try
+        {
+            return suppliedBytes.Length == _authTokenBytes.Length &&
+                   CryptographicOperations.FixedTimeEquals(suppliedBytes, _authTokenBytes);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(suppliedBytes);
+        }
+    }
+
+    private async Task HandleContextAsync(HttpListenerContext ctx, CancellationToken ct)
+    {
+        if (!IsAuthorized(ctx.Request))
+        {
+            _audit.Log("security", "companion_auth_rejected", "blocked", $"Rejected unauthorized request from {ctx.Request.RemoteEndPoint}");
+            ctx.Response.StatusCode = 401;
+            await WriteJsonAsync(ctx.Response, new { ok = false, error = "Unauthorized Bearer token" });
+            return;
+        }
+
+        if (ctx.Request.IsWebSocketRequest && ctx.Request.Url?.AbsolutePath == "/ws")
+        {
+            var wsCtx = await ctx.AcceptWebSocketAsync(subProtocol: null);
+            await HandleWebSocketAsync(wsCtx.WebSocket, ct);
+            return;
+        }
+
+        var path = ctx.Request.Url?.AbsolutePath ?? "/";
+        if (ctx.Request.HttpMethod == "GET" && path == "/api/status")
+        {
+            await WriteJsonAsync(ctx.Response, new
+            {
+                ok = true,
+                assistantName = _parser.AssistantName,
+                vaultEnrolled = _vault.IsEnrolled,
+                lockoutSeconds = _vault.LockoutSecondsRemaining
+            });
+            return;
+        }
+
+        if (ctx.Request.HttpMethod == "POST" && path == "/api/command")
+        {
+            using var reader = new StreamReader(ctx.Request.InputStream, Encoding.UTF8);
+            var body = await reader.ReadToEndAsync(ct);
+            if (body.Length > MaxPayloadBytes)
+            {
+                ctx.Response.StatusCode = 413;
+                await WriteJsonAsync(ctx.Response, new { ok = false, error = "Payload exceeds 16 KB limit" });
+                return;
+            }
+
+            var responseJson = await DispatchJsonPayloadAsync(body);
+            await WriteRawJsonAsync(ctx.Response, responseJson);
+            return;
+        }
+
+        ctx.Response.StatusCode = 404;
+        await WriteJsonAsync(ctx.Response, new { ok = false, error = "Unknown companion endpoint" });
+    }
+
+    private async Task HandleWebSocketAsync(WebSocket ws, CancellationToken ct)
+    {
+        var buffer = new byte[MaxPayloadBytes];
+        try
+        {
+            while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
+            {
+                var result = await ws.ReceiveAsync(buffer, ct);
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", ct);
+                    break;
+                }
+
+                if (result.Count > 0 && result.EndOfMessage)
+                {
+                    var text = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    var replyJson = await DispatchJsonPayloadAsync(text);
+                    var outBytes = Encoding.UTF8.GetBytes(replyJson);
+                    await ws.SendAsync(outBytes, WebSocketMessageType.Text, endOfMessage: true, ct);
+                }
+            }
+        }
+        finally
+        {
+            ws.Dispose();
+        }
+    }
+
+    private async Task<string> DispatchJsonPayloadAsync(string rawJson)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(rawJson);
+            var root = doc.RootElement;
+            var type = root.TryGetProperty("type", out var t) ? t.GetString() : "command";
+
+            if (type == "unlock_challenge")
+            {
+                var pass = root.TryGetProperty("passphrase", out var p) ? p.GetString() ?? string.Empty : string.Empty;
+                var vec = root.TryGetProperty("voiceprint", out var v) && v.ValueKind == JsonValueKind.Array
+                    ? JsonSerializer.Deserialize<double[]>(v.GetRawText()) ?? Array.Empty<double>()
+                    : Array.Empty<double>();
+
+                var verify = _vault.VerifyTwoFactor(pass, vec);
+                return JsonSerializer.Serialize(new
+                {
+                    ok = verify.Verified,
+                    similarity = verify.Similarity,
+                    reply = verify.Message
+                });
+            }
+
+            var prompt = root.TryGetProperty("prompt", out var pr) ? pr.GetString() ?? string.Empty : string.Empty;
+            var res = await _parser.ExecuteAsync(prompt);
+            OnCommandExecuted?.Invoke(res.Reply);
+
+            if (res.TriggerLockWorkstation)
+            {
+                NativeInterop.LockWorkstation();
+            }
+
+            return JsonSerializer.Serialize(new { ok = res.Succeeded, reply = res.Reply });
+        }
+        catch (Exception ex)
+        {
+            return JsonSerializer.Serialize(new { ok = false, reply = $"Invalid request: {ex.Message}" });
+        }
+    }
+
+    private static Task WriteJsonAsync(HttpListenerResponse resp, object payload) =>
+        WriteRawJsonAsync(resp, JsonSerializer.Serialize(payload));
+
+    private static async Task WriteRawJsonAsync(HttpListenerResponse resp, string json)
+    {
+        var bytes = Encoding.UTF8.GetBytes(json);
+        resp.ContentType = "application/json; charset=utf-8";
+        resp.ContentLength64 = bytes.Length;
+        await resp.OutputStream.WriteAsync(bytes);
+        resp.Close();
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        if (_listener.IsListening) _listener.Stop();
+        _listener.Close();
+        CryptographicOperations.ZeroMemory(_authTokenBytes);
+        _cts.Dispose();
+    }
+}
 `,
   },
   {
-    path: "build_exe.bat",
-    group: "Tests & Packaging",
-    language: "batch",
-    summary: "PyInstaller build script producing a standalone WindowsNotchPro.exe executable.",
-    content: `@echo off
-setlocal
-cd /d "%~dp0"
+    path: "companion/NotchCompanion.kt",
+    group: "Kotlin Companion & Build",
+    language: "kotlin",
+    summary:
+      "Token-authenticated Kotlin WebSocket & HTTP companion client for Android/JVM to remotely trigger apps, sandboxed folders, smooth mouse moves, and 2FA unlock challenges.",
+    content: String.raw`package com.novanotch.companion
 
-echo [WindowsNotch Pro] Building standalone WindowsNotchPro.exe (x64)...
-.venv\\Scripts\\pyinstaller.exe ^
-  --noconfirm ^
-  --clean ^
-  --onefile ^
-  --windowed ^
-  --name WindowsNotchPro ^
-  --hidden-import=win32com.client ^
-  --hidden-import=send2trash ^
-  --hidden-import=psutil ^
-  windows_notch_pro/main.py
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.net.http.WebSocket
+import java.time.Duration
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletionStage
 
-if %ERRORLEVEL% NEQ 0 (
-  echo [ERROR] PyInstaller build failed.
-  exit /b 1
-)
+/**
+ * NOVA / WindowsNotch Pro — Kotlin Companion Client (JVM & Android-compatible core).
+ *
+ * Authenticates via Bearer token (supplied at runtime via pairing or environment variable,
+ * never hardcoded) to the local C# CompanionServer inside WindowsNotchPro.exe.
+ */
+class NotchCompanionClient(
+    private val host: String = "127.0.0.1",
+    private val port: Int = 17420,
+    private val bearerToken: String,
+    private val useTls: Boolean = false
+) : AutoCloseable {
 
-echo [OK] Standalone binary created at dist\\WindowsNotchPro.exe
-endlocal
-`,
-  },
-  {
-    path: "install_service.ps1",
-    group: "Tests & Packaging",
-    language: "powershell",
-    summary: "Administrator PowerShell script installing the Session-0 LocalSystem Lock-Screen Service and registering the C++ ICredentialProvider COM DLL.",
-    content: `#Requires -RunAsAdministrator
-<#
-.SYNOPSIS
-  Installs WindowsNotchPro Session-0 Lock-Screen Service (LocalSystem) and registers
-  the C++ ICredentialProvider COM DLL with Winlogon.
-#>
-$ErrorActionPreference = "Stop"
-$RootDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$PythonExe = Join-Path $RootDir ".venv\\Scripts\\python.exe"
-$ServiceScript = Join-Path $RootDir "windows_notch_pro\\service\\notch_lock_service.py"
-$CredDll = Join-Path $RootDir "credential_provider\\WindowsNotchCredProvider.dll"
-$Clsid = "{8E4C7A91-3B52-4D9F-A7D2-9F0E5C4B2026}"
+    private val httpClient: HttpClient = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(5))
+        .build()
 
-Write-Host "[1/3] Installing Session-0 Windows Service (LocalSystem)..."
-& $PythonExe $ServiceScript --startup auto install
-& $PythonExe $ServiceScript start
+    @Volatile
+    private var webSocket: WebSocket? = null
 
-if (Test-Path $CredDll) {
-    Write-Host "[2/3] Copying Credential Provider DLL to System32..."
-    Copy-Item -Path $CredDll -Destination "C:\\Windows\\System32\\WindowsNotchCredProvider.dll" -Force
+    private val httpScheme: String get() = if (useTls) "https" else "http"
+    private val wsScheme: String get() = if (useTls) "wss" else "ws"
 
-    Write-Host "[3/3] Registering ICredentialProvider CLSID with Winlogon..."
-    $CpKey = "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\Credential Providers\\$Clsid"
-    $ClsidKey = "HKLM:\\SOFTWARE\\Classes\\CLSID\\$Clsid"
-    $InprocKey = "$ClsidKey\\InprocServer32"
+    /**
+     * Opens a persistent, token-authenticated WebSocket tunnel to WindowsNotchPro.
+     */
+    fun connectWebSocket(onReply: (String) -> Unit, onError: (Throwable) -> Unit = {}): CompletableFuture<WebSocket> {
+        require(bearerToken.length >= 24) { "Bearer pairing token must be at least 24 characters." }
+        val wsUri = URI.create("$wsScheme://$host:$port/ws")
 
-    New-Item -Path $CpKey -Force | Out-Null
-    Set-ItemProperty -Path $CpKey -Name "(Default)" -Value "WindowsNotchProCredentialProvider"
+        return httpClient.newWebSocketBuilder()
+            .header("Authorization", "Bearer $bearerToken")
+            .connectTimeout(Duration.ofSeconds(5))
+            .buildAsync(wsUri, object : WebSocket.Listener {
+                private val buffer = StringBuilder()
 
-    New-Item -Path $InprocKey -Force | Out-Null
-    Set-ItemProperty -Path $ClsidKey -Name "(Default)" -Value "WindowsNotchProCredentialProvider"
-    Set-ItemProperty -Path $InprocKey -Name "(Default)" -Value "C:\\Windows\\System32\\WindowsNotchCredProvider.dll"
-    Set-ItemProperty -Path $InprocKey -Name "ThreadingModel" -Value "Apartment"
-} else {
-    Write-Warning "WindowsNotchCredProvider.dll not found. Build it first using credential_provider\\build_cred_provider.bat."
+                override fun onText(ws: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*>? {
+                    buffer.append(data)
+                    if (last) {
+                        val message = buffer.toString()
+                        buffer.setLength(0)
+                        onReply(message)
+                    }
+                    ws.request(1)
+                    return null
+                }
+
+                override fun onError(ws: WebSocket, error: Throwable) {
+                    onError(error)
+                }
+            })
+            .thenApply { ws ->
+                webSocket = ws
+                ws
+            }
+    }
+
+    /**
+     * Sends a natural-language voice or text command over WebSocket (if connected) or HTTP POST.
+     */
+    fun sendCommand(prompt: String): CompletableFuture<String> {
+        val safePrompt = escapeJson(prompt)
+        val json = """{"type":"command","prompt":"$safePrompt"}"""
+        val activeWs = webSocket
+        if (activeWs != null && !activeWs.isOutputClosed) {
+            return activeWs.sendText(json, true).thenApply { "Sent via WebSocket: $prompt" }
+        }
+        return postJson("/api/command", json)
+    }
+
+    // --- Typed Desktop & Automation Helpers ---
+
+    fun openApp(appName: String): CompletableFuture<String> =
+        sendCommand("Open $appName")
+
+    fun closeApp(appName: String): CompletableFuture<String> =
+        sendCommand("Close $appName")
+
+    fun createFolder(name: String, root: String = "Desktop"): CompletableFuture<String> =
+        sendCommand("Create folder $name on $root")
+
+    fun renameFolder(oldName: String, newName: String, root: String = "Desktop"): CompletableFuture<String> =
+        sendCommand("Rename folder $oldName to $newName on $root")
+
+    fun deleteFolder(name: String, root: String = "Desktop"): CompletableFuture<String> =
+        sendCommand("Delete folder $name from $root")
+
+    fun moveMouse(x: Int, y: Int): CompletableFuture<String> =
+        sendCommand("Move mouse to $x $y")
+
+    fun emergencyStopMouse(): CompletableFuture<String> =
+        sendCommand("Emergency stop")
+
+    fun lockWorkstation(): CompletableFuture<String> =
+        sendCommand("Lock PC")
+
+    /**
+     * Submits a 2FA unlock challenge (passphrase + MFCC voiceprint vector) to SecurityVault.
+     */
+    fun submitUnlockChallenge(passphrase: String, voiceprintVector: List<Double>): CompletableFuture<String> {
+        val safePass = escapeJson(passphrase)
+        val vecJson = voiceprintVector.joinToString(prefix = "[", postfix = "]", separator = ",")
+        val payload = """{"type":"unlock_challenge","passphrase":"$safePass","voiceprint":$vecJson}"""
+        return postJson("/api/command", payload)
+    }
+
+    fun fetchStatus(): CompletableFuture<String> {
+        val req = HttpRequest.newBuilder()
+            .uri(URI.create("$httpScheme://$host:$port/api/status"))
+            .header("Authorization", "Bearer $bearerToken")
+            .timeout(Duration.ofSeconds(5))
+            .GET()
+            .build()
+
+        return httpClient.sendAsync(req, HttpResponse.BodyHandlers.ofString())
+            .thenApply { it.body() }
+    }
+
+    private fun postJson(path: String, jsonBody: String): CompletableFuture<String> {
+        val req = HttpRequest.newBuilder()
+            .uri(URI.create("$httpScheme://$host:$port$path"))
+            .header("Authorization", "Bearer $bearerToken")
+            .header("Content-Type", "application/json")
+            .timeout(Duration.ofSeconds(8))
+            .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+            .build()
+
+        return httpClient.sendAsync(req, HttpResponse.BodyHandlers.ofString())
+            .thenApply { response ->
+                val code = response.statusCode()
+                if (code in 200..299) {
+                    response.body()
+                } else {
+                    val safeBody = escapeJson(response.body())
+                    """{"ok":false,"status":$code,"body":"$safeBody"}"""
+                }
+            }
+    }
+
+    private fun escapeJson(value: String): String =
+        value.replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+
+    override fun close() {
+        webSocket?.sendClose(WebSocket.NORMAL_CLOSURE, "Companion disconnecting")
+        webSocket = null
+    }
 }
 
-Write-Host "Installation complete. Reboot or lock workstation (Win+L) to verify 2FA Voice Unlock."
+/**
+ * CLI example:
+ *   set NOTCH_COMPANION_TOKEN=<your-runtime-token>
+ *   kotlinc companion/NotchCompanion.kt -include-runtime -d NotchCompanion.jar
+ *   java -jar NotchCompanion.jar "Open Chrome"
+ */
+fun main(args: Array<String>) {
+    val token = System.getenv("NOTCH_COMPANION_TOKEN")
+    if (token.isNullOrBlank()) {
+        System.err.println("Set NOTCH_COMPANION_TOKEN before running NotchCompanion.")
+        return
+    }
+
+    val host = System.getenv("NOTCH_HOST") ?: "127.0.0.1"
+    val prompt = if (args.isNotEmpty()) args.joinToString(" ") else "List running apps"
+
+    NotchCompanionClient(host = host, bearerToken = token).use { client ->
+        val response = client.sendCommand(prompt).join()
+        println("NOVA Response: $response")
+    }
+}
+`,
+  },
+  {
+    path: "build.bat",
+    group: "Kotlin Companion & Build",
+    language: "batch",
+    summary:
+      "One-click Windows x64 build script compiling native\\notch_native.c (MSVC cl.exe or MinGW gcc) into NotchNative.dll and publishing self-contained WindowsNotchPro.exe.",
+    content: String.raw`@echo off
+setlocal enabledelayedexpansion
+
+echo ================================================================
+echo  NOVA / WindowsNotch Pro — Native C + .NET 8 WPF x64 Builder
+echo ================================================================
+
+:: 1. Build native/NotchNative.dll using MSVC cl.exe OR MinGW-w64 gcc
+echo.
+echo [1/3] Compiling native\notch_native.c -> native\NotchNative.dll ...
+
+where cl.exe >nul 2>nul
+if %ERRORLEVEL%==0 (
+    echo       Detected MSVC cl.exe
+    cl.exe /nologo /O2 /LD /DNOTCH_NATIVE_EXPORTS native\notch_native.c /Fe:native\NotchNative.dll user32.lib crypt32.lib advapi32.lib
+    if errorlevel 1 goto :build_failed
+    del /q notch_native.obj native\NotchNative.exp native\NotchNative.lib 2>nul
+    goto :native_ok
+)
+
+where gcc.exe >nul 2>nul
+if %ERRORLEVEL%==0 (
+    echo       Detected MinGW-w64 gcc.exe
+    gcc.exe -O2 -shared -DNOTCH_NATIVE_EXPORTS -o native\NotchNative.dll native\notch_native.c -luser32 -lcrypt32 -ladvapi32 -lm
+    if errorlevel 1 goto :build_failed
+    goto :native_ok
+)
+
+echo [ERROR] Neither MSVC (cl.exe) nor MinGW-w64 (gcc.exe) was found in PATH.
+echo         Open "x64 Native Tools Command Prompt for VS" or install MinGW-w64, then re-run build.bat.
+exit /b 1
+
+:native_ok
+echo       [OK] native\NotchNative.dll compiled cleanly.
+
+:: 2. Verify .NET 8 SDK
+echo.
+echo [2/3] Checking .NET 8 SDK ...
+where dotnet >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] .NET 8 SDK not found. Install from https://dotnet.microsoft.com/download/dotnet/8.0
+    exit /b 1
+)
+dotnet --version
+
+:: 3. Publish standalone win-x64 WPF executable
+echo.
+echo [3/3] Publishing self-contained WindowsNotchPro.exe (win-x64) ...
+dotnet publish WindowsNotchPro.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist
+if errorlevel 1 goto :build_failed
+
+copy /Y native\NotchNative.dll dist\NotchNative.dll >nul
+
+echo.
+echo ================================================================
+echo  BUILD COMPLETE!
+echo  Standalone binary: dist\WindowsNotchPro.exe
+echo  Native Win32 DLL : dist\NotchNative.dll
+echo ================================================================
+exit /b 0
+
+:build_failed
+echo.
+echo [ERROR] Build failed. Inspect compiler messages above.
+exit /b 1
 `,
   },
   {
     path: "README.md",
-    group: "Tests & Packaging",
+    group: "Kotlin Companion & Build",
     language: "markdown",
-    summary: "Quick-start, security architecture, packaging, and test instructions for WindowsNotch Pro.",
-    content: `# WindowsNotch Pro (Windows 10 & Windows 11 x64)
-
-## Quick Start
-1. Double-click \`WindowsNotchPro.bat\` to create an isolated virtual environment and launch the top-center Dynamic Island assistant.
-2. Ask **"Open security vault"** to configure your PBKDF2-HMAC-SHA256 passphrase, DPAPI Windows credentials, and 3-second MFCC voiceprint.
-3. Say **"Notch"** or click **Ask** to run natural-language folder, application, mouse, gesture, or memory-aware commands.
-
-## Build Standalone Executable
-\`\`\`bat
-build_exe.bat
-\`\`\`
-Outputs \`dist\\WindowsNotchPro.exe\`.
-
-## Install Session-0 Lock-Screen Unlock Service (Administrator)
-\`\`\`powershell
-.\\credential_provider\\build_cred_provider.bat
-powershell -ExecutionPolicy Bypass -File .\\install_service.ps1
-\`\`\`
-
-## Run Automated Unit Test Suite
-\`\`\`bat
-python -m unittest discover -s tests -v
-\`\`\`
-`,
+    summary:
+      "Architecture overview, one-click Windows x64 build instructions, security model, and Kotlin companion usage.",
+    content: [
+      "# NOVA / WindowsNotch Pro — Native Windows 10 & 11 (x64)",
+      "",
+      "Ultra-low-RAM native Windows Dynamic Island AI assistant built with **.NET 8 WPF (C# + XAML)**, a **C11 Win32 native engine (`NotchNative.dll`)**, and a **Kotlin companion client**.",
+      "",
+      "## Folder Structure",
+      "",
+      "- `WindowsNotchPro.csproj`, `app.manifest`, `App.xaml`, `App.xaml.cs`, `MainWindow.xaml`, `MainWindow.xaml.cs` — Frameless, transparent, always-on-top Per-Monitor V2 DPI WPF overlay with `248x48` idle pill, dark frosted-glass Bento card, auto-cycling aurora themes, and two-way `System.Speech` voice talk-back.",
+      "- `native/notch_native.h`, `native/notch_native.c` — Compiled into `NotchNative.dll` for cubic ease-in-out Win32 `SendInput` mouse control, atomic emergency stop, `LockWorkStation()`, Windows 11 `DwmSetWindowAttribute` rounded corners, DPAPI sealing, and SDDL-protected Named Pipes (`\\\\.\\pipe\\WindowsNotchUnlock`).",
+      "- `native/credential_provider_skeleton.cpp` — Session-0 Winlogon `ICredentialProvider` COM skeleton.",
+      "- `Services/NativeInterop.cs`, `SafeFileManager.cs`, `SafeAppManager.cs`, `SecurityVault.cs`, `AuditLogger.cs`, `CommandParser.cs`, `CompanionServer.cs` — Core Windows managers, Recycle Bin soft-delete sandbox, critical-process guard, PBKDF2-HMAC-SHA256 (200k) + voiceprint 2FA vault, hash-chained `audit.jsonl`, and Bearer-authenticated local WebSocket/HTTP listener.",
+      "- `companion/NotchCompanion.kt` — Kotlin companion client for remote commands and 2FA unlock challenges.",
+      "- `build.bat` — One-click x64 build producing `dist\\WindowsNotchPro.exe`.",
+      "",
+      "## One-Click Build (Windows 10 & 11 x64)",
+      "",
+      "1. Install .NET 8 SDK (https://dotnet.microsoft.com/download/dotnet/8.0) and either Visual Studio C++ Build Tools (`cl.exe`) or MinGW-w64 (`gcc.exe`).",
+      "2. Run `build.bat`.",
+      "3. Launch `dist\\WindowsNotchPro.exe`.",
+      "",
+      "## Kotlin Companion Usage",
+      "",
+      "Set `NOTCH_COMPANION_TOKEN` on both the Windows host (before launching `WindowsNotchPro.exe`) and the Kotlin client device, then compile and run:",
+      "",
+      "```bat",
+      "kotlinc companion\\NotchCompanion.kt -include-runtime -d NotchCompanion.jar",
+      "java -jar NotchCompanion.jar \"Open Chrome\"",
+      "```",
+      "",
+    ].join("\n"),
   },
 ];

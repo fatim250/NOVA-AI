@@ -1,20 +1,15 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import {
-  AppWindow,
   Folder,
   Globe,
   Hand,
-  Lock,
   Minimize2,
-  Monitor,
   OctagonAlert,
   Plus,
   RotateCcw,
-  ShieldCheck,
   Trash2,
   Unlock,
-  Volume2,
   X,
 } from "lucide-react";
 import type {
@@ -77,6 +72,8 @@ interface DesktopSimulatorProps {
   folders: VirtualFolder[];
   recycledFolders: RecycledFolder[];
   onRestoreRecycled: (id: string) => void;
+  explorerOpen: boolean;
+  onCloseExplorer: () => void;
   apps: DesktopApp[];
   onOpenAppWindow: (appId: string) => void;
   onCloseAppWindow: (appId: string) => void;
@@ -88,7 +85,6 @@ interface DesktopSimulatorProps {
   onToggleKeepAwake: () => void;
   airMouseEnabled: boolean;
   onToggleAirMouse: () => void;
-  volume: number;
   onEmergencyStop: () => void;
   onTriggerGesture: (gesture: "Pointing_Up" | "Closed_Fist" | "Thumb_Up" | "Thumb_Down") => void;
   onOpenVault: () => void;
@@ -134,6 +130,8 @@ export const DesktopSimulator: React.FC<DesktopSimulatorProps> = ({
   folders,
   recycledFolders,
   onRestoreRecycled,
+  explorerOpen,
+  onCloseExplorer,
   apps,
   onOpenAppWindow,
   onCloseAppWindow,
@@ -145,7 +143,6 @@ export const DesktopSimulator: React.FC<DesktopSimulatorProps> = ({
   onToggleKeepAwake,
   airMouseEnabled,
   onToggleAirMouse,
-  volume,
   onEmergencyStop,
   onTriggerGesture,
   onOpenVault,
@@ -223,82 +220,80 @@ export const DesktopSimulator: React.FC<DesktopSimulatorProps> = ({
   });
 
   return (
-    <div className="flex h-full flex-col gap-3">
-      {/* Live Interactive Windows 11 Desktop Canvas */}
-      <div className="relative flex-1 min-h-[560px] overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-[#0F172A] via-[#0B1120] to-[#020617] shadow-2xl">
-        {/* Background Wallpaper with Graceful Fallback */}
-        <img
-          src={isLocked ? LOCK_WALLPAPER : DESKTOP_WALLPAPER}
-          alt={isLocked ? "Windows 11 lock screen backdrop" : "Windows 11 dark glass desktop wallpaper"}
-          referrerPolicy="no-referrer"
-          className="absolute inset-0 h-full w-full object-cover opacity-85 transition-opacity duration-300"
-        />
+    <div className="relative h-full w-full overflow-hidden bg-gradient-to-br from-[#070B14] via-[#050811] to-[#02040A]">
+      {/* Clean Subtle Ambient Desktop Wallpaper */}
+      <img
+        src={isLocked ? LOCK_WALLPAPER : DESKTOP_WALLPAPER}
+        alt={isLocked ? "Windows 11 lock screen backdrop" : "Windows 11 dark glass desktop wallpaper"}
+        referrerPolicy="no-referrer"
+        className="absolute inset-0 h-full w-full object-cover opacity-75 transition-opacity duration-300"
+      />
+      <div
+        className={`absolute inset-0 transition-colors duration-300 ${
+          isLocked
+            ? "bg-gradient-to-b from-slate-950/65 via-slate-950/40 to-slate-950/85"
+            : "bg-gradient-to-b from-slate-950/35 via-slate-950/15 to-slate-950/55"
+        }`}
+      />
+
+      {/* Top-Center Floating Dynamic Island (ONLY permanent element on screen; auto-hides in Browser) */}
+      <DynamicNotch
+        assistantName={assistantName}
+        browserAutoHide={isBrowserFocused}
+        expanded={notchExpanded}
+        activeView={activeNotchView}
+        onChangeView={onChangeNotchView}
+        onToggleExpanded={onToggleNotch}
+        orbState={orbState}
+        liveStatus={liveStatus}
+        liveInputTranscript={liveInputTranscript}
+        liveOutputTranscript={liveOutputTranscript}
+        isLocked={isLocked}
+        inputValue={inputValue}
+        onInputChange={onInputChange}
+        onSubmitCommand={onSubmitCommand}
+        onToggleLiveVoice={onToggleLiveVoice}
+        lastReply={lastReply}
+        lastResolvedRef={lastResolvedRef}
+        lastSources={lastSources}
+        lastError={lastError}
+        retryableError={retryableError}
+        onRetryLastCommand={onRetryLastCommand}
+        memoryCount={memoryCount}
+        currentTrack={currentTrack}
+        isTrackPlaying={isTrackPlaying}
+        trackProgress={trackProgress}
+        songResults={songResults}
+        onPlayTrack={onPlayTrack}
+        onTogglePlayPause={onTogglePlayPause}
+        onStopTrack={onStopTrack}
+        onNextTrack={onNextTrack}
+        onPrevTrack={onPrevTrack}
+        onSearchSongsDirect={onSearchSongsDirect}
+        isPatrolling={isPatrolling}
+        onToggleKeepAwake={onToggleKeepAwake}
+        airMouseEnabled={airMouseEnabled}
+        onToggleAirMouse={onToggleAirMouse}
+        apps={apps}
+        folders={folders}
+        vault={vault}
+        onOpenAppWindow={onOpenAppWindow}
+        onCloseAppWindow={onCloseAppWindow}
+        onAttemptProtectedProcess={onAttemptProtectedProcess}
+        onOpenVault={onOpenVault}
+        onLockWorkstation={onLockWorkstation}
+      />
+
+      {/* UNLOCKED DESKTOP LAYER — 100% Empty unless user opens an App or File Explorer */}
+      {!isLocked && (
         <div
-          className={`absolute inset-0 transition-colors duration-300 ${
-            isLocked
-              ? "bg-gradient-to-b from-slate-950/60 via-slate-950/35 to-slate-950/80"
-              : "bg-gradient-to-b from-slate-950/25 via-transparent to-slate-950/45"
+          onClick={() => {
+            if (focusedAppId) onFocusApp(null);
+          }}
+          className={`relative z-10 flex h-full flex-col justify-between transition-[padding] duration-200 ${
+            isBrowserFocused ? "p-3" : "px-6 pb-14 pt-24"
           }`}
-        />
-
-        {/* Top-Center Floating Dynamic Island (Active unlocked & Lock Screen; auto-hides while working in Browser) */}
-        <DynamicNotch
-          assistantName={assistantName}
-          browserAutoHide={isBrowserFocused}
-          expanded={notchExpanded}
-          activeView={activeNotchView}
-          onChangeView={onChangeNotchView}
-          onToggleExpanded={onToggleNotch}
-          orbState={orbState}
-          liveStatus={liveStatus}
-          liveInputTranscript={liveInputTranscript}
-          liveOutputTranscript={liveOutputTranscript}
-          isLocked={isLocked}
-          inputValue={inputValue}
-          onInputChange={onInputChange}
-          onSubmitCommand={onSubmitCommand}
-          onToggleLiveVoice={onToggleLiveVoice}
-          lastReply={lastReply}
-          lastResolvedRef={lastResolvedRef}
-          lastSources={lastSources}
-          lastError={lastError}
-          retryableError={retryableError}
-          onRetryLastCommand={onRetryLastCommand}
-          memoryCount={memoryCount}
-          currentTrack={currentTrack}
-          isTrackPlaying={isTrackPlaying}
-          trackProgress={trackProgress}
-          songResults={songResults}
-          onPlayTrack={onPlayTrack}
-          onTogglePlayPause={onTogglePlayPause}
-          onStopTrack={onStopTrack}
-          onNextTrack={onNextTrack}
-          onPrevTrack={onPrevTrack}
-          onSearchSongsDirect={onSearchSongsDirect}
-          isPatrolling={isPatrolling}
-          onToggleKeepAwake={onToggleKeepAwake}
-          airMouseEnabled={airMouseEnabled}
-          onToggleAirMouse={onToggleAirMouse}
-          apps={apps}
-          folders={folders}
-          vault={vault}
-          onOpenAppWindow={onOpenAppWindow}
-          onCloseAppWindow={onCloseAppWindow}
-          onAttemptProtectedProcess={onAttemptProtectedProcess}
-          onOpenVault={onOpenVault}
-          onLockWorkstation={onLockWorkstation}
-        />
-
-        {/* UNLOCKED WINDOWS 11 DESKTOP LAYER */}
-        {!isLocked && (
-          <div
-            onClick={() => {
-              if (focusedAppId) onFocusApp(null);
-            }}
-            className={`relative z-10 flex h-full flex-col justify-between pb-11 transition-[padding] duration-200 ${
-              isBrowserFocused ? "pt-3" : "pt-20"
-            }`}
-          >
+        >
             {/* MAXIMIZED FOCUSED BROWSER VIEW — Tabs sit cleanly at the very top while the assistant vanishes */}
             {focusedBrowserApp ? (
               <div
@@ -422,211 +417,226 @@ export const DesktopSimulator: React.FC<DesktopSimulatorProps> = ({
                   </p>
                 </div>
               </div>
-            ) : (
-              <div className="grid flex-1 grid-cols-1 gap-4 px-5 py-2 lg:grid-cols-12">
-              {/* Left Column: Sandboxed Windows 11 File Explorer */}
-              <div className="flex flex-col overflow-hidden rounded-xl border border-white/12 bg-[#0F141E]/84 shadow-xl backdrop-blur-xl lg:col-span-5">
-                <div className="flex items-center justify-between border-b border-white/10 px-3.5 py-2.5">
-                  <div className="flex items-center gap-2 text-xs font-medium text-slate-200">
-                    <Folder className="h-3.5 w-3.5 text-sky-400" />
-                    <span className="font-display">File Explorer · Sandboxed Roots</span>
-                  </div>
-                  <span className="font-mono text-[11px] text-slate-400 tabular-nums">
-                    {activeRootTab === "Recycle Bin"
-                      ? `${recycledFolders.length} recycled`
-                      : `${filteredFolders.length} folders`}
-                  </span>
-                </div>
-
-                {/* Root Tabs */}
-                <div className="flex items-center gap-1 border-b border-white/8 bg-white/[0.02] px-2.5 py-1.5">
-                  {[...ALLOWED_SANDBOX_ROOTS, "Recycle Bin" as const].map((tab) => (
-                    <button
-                      key={tab}
-                      type="button"
-                      onClick={() => setActiveRootTab(tab)}
-                      className={`rounded-md px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors ${
-                        activeRootTab === tab
-                          ? "bg-white/12 text-white"
-                          : "text-slate-400 hover:bg-white/6 hover:text-slate-200"
+            ) : (explorerOpen || openApps.length > 0 || airMouseEnabled || isPatrolling) ? (
+              <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 overflow-y-auto py-2">
+                <div
+                  className={`grid flex-1 grid-cols-1 gap-4 ${
+                    explorerOpen && openApps.length > 0 ? "lg:grid-cols-12" : ""
+                  }`}
+                >
+                  {/* Sandboxed Windows 11 File Explorer — ONLY shown when opened */}
+                  {explorerOpen && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className={`flex max-h-[520px] flex-col overflow-hidden rounded-xl border border-white/12 bg-[#0F141E]/88 shadow-2xl backdrop-blur-xl ${
+                        openApps.length > 0 ? "lg:col-span-5" : "mx-auto w-full max-w-2xl"
                       }`}
                     >
-                      {tab}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Folder Listing */}
-                <div className="flex-1 overflow-y-auto p-3">
-                  {activeRootTab === "Recycle Bin" ? (
-                    recycledFolders.length === 0 ? (
-                      <div className="flex h-full min-h-[160px] flex-col items-center justify-center text-center text-xs text-slate-400">
-                        <Trash2 className="mb-2 h-5 w-5 text-slate-500" />
-                        <p>Recycle Bin is empty.</p>
-                        <p className="mt-1 text-slate-500">
-                          Deleted folders are soft-deleted here via send2trash.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="divide-y divide-white/8">
-                        {recycledFolders.map((rf) => (
-                          <div
-                            key={rf.id}
-                            className="flex items-center justify-between gap-2 py-2 text-xs"
+                      <div className="flex items-center justify-between border-b border-white/10 px-3.5 py-2.5">
+                        <div className="flex items-center gap-2 text-xs font-medium text-slate-200">
+                          <Folder className="h-3.5 w-3.5 text-sky-400" />
+                          <span className="font-display">File Explorer · Sandboxed Roots</span>
+                        </div>
+                        <div className="flex items-center gap-2.5">
+                          <span className="font-mono text-[11px] text-slate-400 tabular-nums">
+                            {activeRootTab === "Recycle Bin"
+                              ? `${recycledFolders.length} recycled`
+                              : `${filteredFolders.length} folders`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={onCloseExplorer}
+                            aria-label="Close File Explorer"
+                            className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-rose-500/20 hover:text-rose-300"
                           >
-                            <div className="min-w-0">
-                              <p className="truncate font-medium text-slate-200">{rf.name}</p>
-                              <p className="text-[11px] text-slate-400">
-                                From {rf.originalRoot} · {rf.deletedAt}
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => onRestoreRecycled(rf.id)}
-                              className="flex shrink-0 items-center gap-1 rounded-md border border-white/12 px-2 py-1 text-[11px] text-sky-300 hover:bg-white/10"
-                            >
-                              <RotateCcw className="h-3 w-3" />
-                              Restore
-                            </button>
-                          </div>
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Root Tabs */}
+                      <div className="flex items-center gap-1 border-b border-white/8 bg-white/[0.02] px-2.5 py-1.5">
+                        {[...ALLOWED_SANDBOX_ROOTS, "Recycle Bin" as const].map((tab) => (
+                          <button
+                            key={tab}
+                            type="button"
+                            onClick={() => setActiveRootTab(tab)}
+                            className={`rounded-md px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors ${
+                              activeRootTab === tab
+                                ? "bg-white/12 text-white"
+                                : "text-slate-400 hover:bg-white/6 hover:text-slate-200"
+                            }`}
+                          >
+                            {tab}
+                          </button>
                         ))}
                       </div>
-                    )
-                  ) : filteredFolders.length === 0 ? (
-                    <div className="flex h-full min-h-[160px] flex-col items-center justify-center text-center text-xs text-slate-400">
-                      <Folder className="mb-2 h-5 w-5 text-slate-500" />
-                      <p>No folders in {activeRootTab}.</p>
-                      <p className="mt-1 text-slate-500">
-                        Ask {assistantName.trim() || "the assistant"} to create a folder here.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-2">
-                      {filteredFolders.map((folder) => (
-                        <div
-                          key={folder.id}
-                          className="flex items-center gap-2.5 rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-2 transition-colors hover:bg-white/[0.07]"
-                        >
-                          <Folder className="h-4 w-4 shrink-0 text-amber-300/90" />
-                          <div className="min-w-0">
-                            <p className="truncate text-xs font-medium text-slate-100">
-                              {folder.name}
-                            </p>
-                            <p className="font-mono text-[10px] text-slate-400 tabular-nums">
-                              {folder.itemCount} items · {folder.createdAt}
+
+                      {/* Folder Listing */}
+                      <div className="flex-1 overflow-y-auto p-3">
+                        {activeRootTab === "Recycle Bin" ? (
+                          recycledFolders.length === 0 ? (
+                            <div className="flex h-full min-h-[160px] flex-col items-center justify-center text-center text-xs text-slate-400">
+                              <Trash2 className="mb-2 h-5 w-5 text-slate-500" />
+                              <p>Recycle Bin is empty.</p>
+                              <p className="mt-1 text-slate-500">
+                                Deleted folders are soft-deleted here via send2trash.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="divide-y divide-white/8">
+                              {recycledFolders.map((rf) => (
+                                <div
+                                  key={rf.id}
+                                  className="flex items-center justify-between gap-2 py-2 text-xs"
+                                >
+                                  <div className="min-w-0">
+                                    <p className="truncate font-medium text-slate-200">{rf.name}</p>
+                                    <p className="text-[11px] text-slate-400">
+                                      From {rf.originalRoot} · {rf.deletedAt}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => onRestoreRecycled(rf.id)}
+                                    className="flex shrink-0 items-center gap-1 rounded-md border border-white/12 px-2 py-1 text-[11px] text-sky-300 hover:bg-white/10"
+                                  >
+                                    <RotateCcw className="h-3 w-3" />
+                                    Restore
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )
+                        ) : filteredFolders.length === 0 ? (
+                          <div className="flex h-full min-h-[160px] flex-col items-center justify-center text-center text-xs text-slate-400">
+                            <Folder className="mb-2 h-5 w-5 text-slate-500" />
+                            <p>No folders in {activeRootTab}.</p>
+                            <p className="mt-1 text-slate-500">
+                              Ask {assistantName.trim() || "the assistant"} to create a folder here.
                             </p>
                           </div>
-                        </div>
-                      ))}
+                        ) : (
+                          <div className="grid grid-cols-2 gap-2">
+                            {filteredFolders.map((folder) => (
+                              <div
+                                key={folder.id}
+                                className="flex items-center gap-2.5 rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-2 transition-colors hover:bg-white/[0.07]"
+                              >
+                                <Folder className="h-4 w-4 shrink-0 text-amber-300/90" />
+                                <div className="min-w-0">
+                                  <p className="truncate text-xs font-medium text-slate-100">
+                                    {folder.name}
+                                  </p>
+                                  <p className="font-mono text-[10px] text-slate-400 tabular-nums">
+                                    {folder.itemCount} items · {folder.createdAt}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="border-t border-white/8 px-3.5 py-2 text-[11px] text-slate-400">
+                        C:\Users\Alex\{activeRootTab} · Traversal &amp; System32 paths blocked
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Live Open App Windows — ONLY shown when at least one app is opened */}
+                  {openApps.length > 0 && (
+                    <div
+                      className={`grid auto-rows-min grid-cols-1 gap-3 sm:grid-cols-2 ${
+                        explorerOpen ? "lg:col-span-7" : "mx-auto w-full max-w-4xl"
+                      }`}
+                    >
+                      {openApps.map((app) => {
+                        const isBrowser = app.id === "chrome" || app.id === "edge";
+                        return (
+                          <motion.div
+                            key={app.id}
+                            initial={{ opacity: 0, scale: 0.96, y: 8 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onFocusApp(app.id);
+                            }}
+                            className={`flex min-h-[210px] cursor-pointer flex-col overflow-hidden rounded-xl border bg-[#0D121C]/90 shadow-2xl backdrop-blur-xl transition-colors ${
+                              focusedAppId === app.id
+                                ? "border-sky-400/50"
+                                : "border-white/14 hover:border-white/25"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+                              <div className="min-w-0">
+                                <p className="truncate font-display text-xs font-semibold text-slate-100">
+                                  {app.windowTitle}
+                                </p>
+                                <p className="font-mono text-[10px] text-slate-400">
+                                  {app.processName}
+                                  {isBrowser ? " · Click to work full-view (auto-hides assistant)" : ""}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onCloseAppWindow(app.id);
+                                }}
+                                aria-label={`Close ${app.name}`}
+                                className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-rose-500/20 hover:text-rose-300"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                            <div className="flex-1 space-y-1.5 p-3 font-mono text-[11px] leading-relaxed text-slate-300">
+                              {app.id === "chrome" && (
+                                <form
+                                  onClick={(e) => e.stopPropagation()}
+                                  onSubmit={(e) => {
+                                    e.preventDefault();
+                                    if (chromeInput.trim()) {
+                                      onNavigateChrome(chromeInput.trim());
+                                      setChromeInput("");
+                                    }
+                                  }}
+                                  className="mb-2 flex items-center gap-1.5"
+                                >
+                                  <input
+                                    type="text"
+                                    value={chromeInput}
+                                    onFocus={() => onFocusApp("chrome")}
+                                    onChange={(e) => setChromeInput(e.target.value)}
+                                    placeholder={app.browserUrl || "https://www.google.com"}
+                                    className="h-7 flex-1 rounded-md border border-white/12 bg-slate-950/90 px-2.5 font-sans text-[11px] text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
+                                  />
+                                  <button
+                                    type="submit"
+                                    className="h-7 rounded-md bg-sky-500/20 px-2 font-sans text-[11px] font-medium text-sky-200 hover:bg-sky-500/30"
+                                  >
+                                    Go
+                                  </button>
+                                </form>
+                              )}
+                              {app.previewLines.map((line, i) => (
+                                <p key={i} className="truncate">
+                                  {line}
+                                </p>
+                              ))}
+                            </div>
+                          </motion.div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
 
-                <div className="border-t border-white/8 px-3.5 py-2 text-[11px] text-slate-400">
-                  C:\Users\Alex\{activeRootTab} · Traversal &amp; System32 paths blocked
-                </div>
-              </div>
-
-              {/* Right Column: Live Open Windows 11 App Windows */}
-              <div className="flex flex-col gap-3 lg:col-span-7">
-                {openApps.length === 0 ? (
-                  <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-white/15 bg-slate-950/35 p-6 text-center backdrop-blur-md">
-                    <AppWindow className="mb-2.5 h-6 w-6 text-slate-400" />
-                    <p className="font-display text-sm font-medium text-slate-200">
-                      Desktop Workspace Clear
-                    </p>
-                    <p className="mt-1 max-w-sm text-xs text-slate-400">
-                      Ask {assistantName.trim() || "the assistant"} to open Chrome, Notepad,
-                      Calculator, VS Code, Terminal, or Edge — or ask what app you opened last.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2">
-                    {openApps.map((app) => {
-                      const isBrowser = app.id === "chrome" || app.id === "edge";
-                      return (
-                        <motion.div
-                          key={app.id}
-                          initial={{ opacity: 0, scale: 0.96, y: 8 }}
-                          animate={{ opacity: 1, scale: 1, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.95 }}
-                          transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onFocusApp(app.id);
-                          }}
-                          className={`flex cursor-pointer flex-col overflow-hidden rounded-xl border bg-[#0D121C]/88 shadow-xl backdrop-blur-xl transition-colors ${
-                            focusedAppId === app.id
-                              ? "border-sky-400/50"
-                              : "border-white/14 hover:border-white/25"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
-                            <div className="min-w-0">
-                              <p className="truncate font-display text-xs font-semibold text-slate-100">
-                                {app.windowTitle}
-                              </p>
-                              <p className="font-mono text-[10px] text-slate-400">
-                                {app.processName}
-                                {isBrowser ? " · Click to work full-view (auto-hides assistant)" : ""}
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onCloseAppWindow(app.id);
-                              }}
-                              aria-label={`Close ${app.name}`}
-                              className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-rose-500/20 hover:text-rose-300"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                          <div className="flex-1 space-y-1.5 p-3 font-mono text-[11px] leading-relaxed text-slate-300">
-                            {app.id === "chrome" && (
-                              <form
-                                onClick={(e) => e.stopPropagation()}
-                                onSubmit={(e) => {
-                                  e.preventDefault();
-                                  if (chromeInput.trim()) {
-                                    onNavigateChrome(chromeInput.trim());
-                                    setChromeInput("");
-                                  }
-                                }}
-                                className="mb-2 flex items-center gap-1.5"
-                              >
-                                <input
-                                  type="text"
-                                  value={chromeInput}
-                                  onFocus={() => onFocusApp("chrome")}
-                                  onChange={(e) => setChromeInput(e.target.value)}
-                                  placeholder={app.browserUrl || "https://www.google.com"}
-                                  className="h-7 flex-1 rounded-md border border-white/12 bg-slate-950/90 px-2.5 font-sans text-[11px] text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
-                                />
-                                <button
-                                  type="submit"
-                                  className="h-7 rounded-md bg-sky-500/20 px-2 font-sans text-[11px] font-medium text-sky-200 hover:bg-sky-500/30"
-                                >
-                                  Go
-                                </button>
-                              </form>
-                            )}
-                            {app.previewLines.map((line, i) => (
-                              <p key={i} className="truncate">
-                                {line}
-                              </p>
-                            ))}
-                          </div>
-                        </motion.div>
-                      );
-                    })}
-                  </div>
-                )}
-
                 {/* Conditional Air-Mouse & Emergency Stop Overlay (ONLY shown when active) */}
                 {(airMouseEnabled || isPatrolling) && (
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-400/30 bg-[#0B1220]/92 px-3.5 py-2.5 backdrop-blur-xl">
+                  <div className="mx-auto flex w-full max-w-2xl flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-400/30 bg-[#0B1220]/92 px-3.5 py-2.5 backdrop-blur-xl">
                     <div className="flex items-center gap-2 text-xs text-slate-200">
                       <Hand className="h-4 w-4 text-sky-400" />
                       <span className="font-medium">
@@ -680,30 +690,31 @@ export const DesktopSimulator: React.FC<DesktopSimulatorProps> = ({
                   </div>
                 )}
               </div>
-            </div>
-            )}
+            ) : null}
 
-            {/* Live Autonomous Cubic-Eased Cursor Overlay */}
-            <motion.div
-              animate={{ left: `${cursorPos.x}%`, top: `${cursorPos.y}%` }}
-              transition={{ duration: 0.42, ease: [0.65, 0, 0.35, 1] }}
-              className="pointer-events-none absolute z-30 -translate-x-1 -translate-y-1"
-            >
-              <svg width="20" height="24" viewBox="0 0 20 24" fill="none">
-                <path
-                  d="M2 2L17 11.5L10.2 13.2L7.2 20L2 2Z"
-                  fill="#F8FAFC"
-                  stroke="#0F172A"
-                  strokeWidth="1.5"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              {isPatrolling && (
-                <span className="ml-3 rounded bg-slate-950/85 px-1.5 py-0.5 font-mono text-[10px] text-sky-300">
-                  Patrol
-                </span>
-              )}
-            </motion.div>
+            {/* Live Autonomous Cubic-Eased Cursor Overlay (ONLY when patrolling, air-mouse, or clicking) */}
+            {(isPatrolling || airMouseEnabled || clickRipple) && (
+              <motion.div
+                animate={{ left: `${cursorPos.x}%`, top: `${cursorPos.y}%` }}
+                transition={{ duration: 0.42, ease: [0.65, 0, 0.35, 1] }}
+                className="pointer-events-none absolute z-30 -translate-x-1 -translate-y-1"
+              >
+                <svg width="20" height="24" viewBox="0 0 20 24" fill="none">
+                  <path
+                    d="M2 2L17 11.5L10.2 13.2L7.2 20L2 2Z"
+                    fill="#F8FAFC"
+                    stroke="#0F172A"
+                    strokeWidth="1.5"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                {isPatrolling && (
+                  <span className="ml-3 rounded bg-slate-950/85 px-1.5 py-0.5 font-mono text-[10px] text-sky-300">
+                    Patrol
+                  </span>
+                )}
+              </motion.div>
+            )}
 
             {/* Click Ripple Feedback */}
             {clickRipple && (
@@ -716,55 +727,6 @@ export const DesktopSimulator: React.FC<DesktopSimulatorProps> = ({
                 className="pointer-events-none absolute z-20 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-sky-400"
               />
             )}
-
-            {/* Minimal Windows 11 Bottom Taskbar */}
-            <div className="absolute inset-x-0 bottom-0 z-20 flex h-11 items-center justify-between border-t border-white/10 bg-[#0B0F18]/82 px-4 backdrop-blur-xl">
-              <div className="flex items-center gap-3 text-xs text-slate-300">
-                <Monitor className="h-4 w-4 text-sky-400" />
-                <span className="font-display font-medium text-slate-200">Windows 11 x64</span>
-                <span className="hidden text-slate-500 sm:inline">·</span>
-                {isBrowserFocused ? (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onFocusApp(null);
-                    }}
-                    className="hidden text-slate-300 transition-colors hover:text-white sm:inline"
-                  >
-                    Browser focused · Assistant hidden (hover top edge or click here)
-                  </button>
-                ) : (
-                  <span className="hidden text-slate-400 sm:inline">
-                    {openApps.length} open {openApps.length === 1 ? "window" : "windows"}
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-4 text-xs text-slate-300">
-                <span className="flex items-center gap-1.5 font-mono tabular-nums">
-                  <Volume2 className="h-3.5 w-3.5 text-slate-400" />
-                  {volume}%
-                </span>
-                <button
-                  type="button"
-                  onClick={onOpenVault}
-                  className="flex items-center gap-1 text-slate-300 transition-colors hover:text-white"
-                >
-                  <ShieldCheck className="h-3.5 w-3.5 text-sky-400" />
-                  <span>Vault</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={onLockWorkstation}
-                  className="flex items-center gap-1 text-slate-300 transition-colors hover:text-white"
-                >
-                  <Lock className="h-3.5 w-3.5" />
-                  <span>Lock PC</span>
-                </button>
-                <span className="font-mono text-slate-200 tabular-nums">{formattedClock}</span>
-              </div>
-            </div>
           </div>
         )}
 
@@ -866,33 +828,5 @@ export const DesktopSimulator: React.FC<DesktopSimulatorProps> = ({
           </div>
         )}
       </div>
-
-      {/* Quiet Prompt Strip below the Desktop Canvas (Keeps the Assistant itself 100% uncluttered) */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-white/[0.07] bg-[#0D1119] px-4 py-2.5">
-        <span className="text-xs text-slate-500">
-          {assistantName.trim() ? `Try asking ${assistantName.trim()}` : "Try a command"}
-        </span>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {[
-            "Call yourself Nova",
-            "Open Chrome",
-            "Play Blinding Lights",
-            "Stop the song",
-            "Create folder Q4 Reports on Desktop",
-            "Do that for Invoices instead",
-            "What's the latest Windows 11 update?",
-          ].map((sample) => (
-            <button
-              key={sample}
-              type="button"
-              onClick={() => onSubmitCommand(sample)}
-              className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-xs text-slate-300 whitespace-nowrap transition-colors hover:border-white/[0.18] hover:bg-white/[0.07] hover:text-white"
-            >
-              {sample}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
   );
 };

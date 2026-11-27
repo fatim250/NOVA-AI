@@ -139,15 +139,11 @@ export interface VaultState {
 export interface SourceFileEntry {
   path: string;
   group:
-    | "Entry & Platform"
-    | "UI & Security Vault"
-    | "AI & Short-Term Memory"
-    | "Voice & Talk-Back"
-    | "Automation & Gestures"
-    | "Sandbox & Security"
-    | "Session-0 Service & C++ CredProvider"
-    | "Tests & Packaging";
-  language: "python" | "cpp" | "powershell" | "batch" | "text" | "markdown";
+    | "WPF Desktop Overlay (.NET 8)"
+    | "Native C Win32 Engine (NotchNative.dll)"
+    | "C# Core Services & Security"
+    | "Kotlin Companion & Build";
+  language: "csharp" | "c" | "cpp" | "xml" | "xaml" | "kotlin" | "batch" | "markdown";
   summary: string;
   content: string;
 }

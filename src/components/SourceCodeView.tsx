@@ -12,22 +12,6 @@ export async function downloadWindowsNotchZip(): Promise<void> {
   const root = zip.folder("WindowsNotchPro");
   if (!root) return;
 
-  // Include __init__.py files so Python package imports work out of the box
-  const packages = [
-    "windows_notch_pro/__init__.py",
-    "windows_notch_pro/ui/__init__.py",
-    "windows_notch_pro/ai/__init__.py",
-    "windows_notch_pro/voice/__init__.py",
-    "windows_notch_pro/automation/__init__.py",
-    "windows_notch_pro/sandbox/__init__.py",
-    "windows_notch_pro/security/__init__.py",
-    "windows_notch_pro/platform_abstraction/__init__.py",
-    "windows_notch_pro/service/__init__.py",
-  ];
-  for (const initPath of packages) {
-    root.file(initPath, '"""WindowsNotch Pro package."""\n');
-  }
-
   for (const file of ALL_SOURCE_FILES) {
     root.file(file.path, file.content);
   }
@@ -36,7 +20,7 @@ export async function downloadWindowsNotchZip(): Promise<void> {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "WindowsNotchPro-Windows-x64.zip";
+  a.download = "WindowsNotchPro-Native-x64.zip";
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -81,12 +65,12 @@ export const SourceCodeView: React.FC = () => {
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-800 pb-4">
         <div>
           <h2 className="font-display text-lg font-semibold text-white">
-            Windows 10 &amp; 11 Native Source Package
+            Windows 10 &amp; 11 Native C / C# (.NET 8 WPF) / Kotlin Package
           </h2>
           <p className="mt-1 text-xs text-slate-400">
-            {ALL_SOURCE_FILES.length} modular files · PyQt6 Dynamic Island · 5-turn sliding-window
-            memory · Session-0 LocalSystem Service · C++ ICredentialProvider COM DLL · unittest
-            suite · PyInstaller EXE &amp; PowerShell installers.
+            {ALL_SOURCE_FILES.length} native files · .NET 8 WPF Per-Monitor V2 overlay ·
+            NotchNative.dll (C11 Win32 SendInput, DWM, DPAPI, SDDL Named Pipe) · PBKDF2 200k 2FA
+            Vault · Kotlin companion client · One-click build.bat.
           </p>
         </div>
 
@@ -117,7 +101,6 @@ export const SourceCodeView: React.FC = () => {
                 <div className="space-y-0.5">
                   {files.map((file) => {
                     const active = file.path === activeFile.path;
-                    const shortName = file.path.replace(/^windows_notch_pro\//, "");
                     return (
                       <button
                         key={file.path}
@@ -130,7 +113,7 @@ export const SourceCodeView: React.FC = () => {
                         }`}
                       >
                         <FileCode2 className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                        <span className="truncate">{shortName}</span>
+                        <span className="truncate">{file.path}</span>
                       </button>
                     );
                   })}

@@ -2,1314 +2,1509 @@ import type { SourceFileEntry } from "../types/notch";
 
 export const SOURCE_CORE_FILES: SourceFileEntry[] = [
   {
-    path: "windows_notch_pro/main.py",
-    group: "Entry & Platform",
-    language: "python",
+    path: "WindowsNotchPro.csproj",
+    group: "WPF Desktop Overlay (.NET 8)",
+    language: "xml",
     summary:
-      "Application entry point enabling Per-Monitor V2 DPI awareness, Windows 11 DWM rounded corners with Windows 10 fallback, and modular cross-platform wiring.",
-    content: `"""WindowsNotch Pro — Production Entry Point (Windows 10 & Windows 11 x64)."""
-from __future__ import annotations
+      "Self-contained .NET 8 WPF x64 project targeting Windows 10 & 11 with unsafe interop, System.Speech, and NotchNative.dll bundling.",
+    content: String.raw`<Project Sdk="Microsoft.NET.Sdk">
 
-import ctypes
-import sys
-from pathlib import Path
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>WindowsNotchPro</AssemblyName>
+    <RootNamespace>WindowsNotchPro</RootNamespace>
+    <Version>2.0.0</Version>
+    <Company>NOVA Systems</Company>
+    <Product>NOVA / WindowsNotch Pro</Product>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication
+  <ItemGroup>
+    <!-- Windows Speech Recognition & Text-to-Speech Talk-Back -->
+    <PackageReference Include="System.Speech" Version="8.0.0" />
+  </ItemGroup>
 
-from windows_notch_pro.ai.intent_router import IntentRouter
-from windows_notch_pro.ai.memory_buffer import ShortTermMemoryBuffer
-from windows_notch_pro.automation.gesture_airmouse import AirMouseController
-from windows_notch_pro.automation.mouse_controller import MouseController
-from windows_notch_pro.platform_abstraction.base import create_platform_adapter
-from windows_notch_pro.sandbox.app_manager import SafeAppManager
-from windows_notch_pro.sandbox.folder_manager import SandboxedFolderManager
-from windows_notch_pro.security.audit_logger import AuditLogger
-from windows_notch_pro.security.crypto_vault import SecurityVault
-from windows_notch_pro.security.voiceprint import VoiceprintVerifier
-from windows_notch_pro.ui.notch_window import DynamicNotchWindow
-from windows_notch_pro.voice.listener import WakeWordVoiceListener
-from windows_notch_pro.voice.tts_engine import NativeTTSEngine
+  <ItemGroup>
+    <!-- Bundle compiled native C Win32 engine beside the executable -->
+    <None Include="native\NotchNative.dll" Condition="Exists('native\NotchNative.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <Link>NotchNative.dll</Link>
+    </None>
+  </ItemGroup>
 
-
-def enable_per_monitor_v2_dpi() -> None:
-    """Enable Per-Monitor V2 DPI awareness on Windows 10 (1703+) & Windows 11."""
-    if sys.platform != "win32":
-        return
-    try:
-        dpi_awareness_context_pmv2 = ctypes.c_void_p(-4)
-        ctypes.windll.user32.SetProcessDpiAwarenessContext(dpi_awareness_context_pmv2)
-    except Exception:
-        try:
-            ctypes.windll.shcore.SetProcessDpiAwareness(2)
-        except Exception:
-            ctypes.windll.user32.SetProcessDPIAware()
-
-
-def main() -> int:
-    enable_per_monitor_v2_dpi()
-    QApplication.setHighDpiScaleFactorRoundingPolicy(
-        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
-    )
-    app = QApplication(sys.argv)
-    app.setApplicationName("WindowsNotch Pro")
-    app.setQuitOnLastWindowClosed(False)
-
-    data_dir = Path.home() / ".windows_notch_pro"
-    data_dir.mkdir(parents=True, exist_ok=True)
-
-    platform_adapter = create_platform_adapter()
-    audit_logger = AuditLogger(data_dir / "audit.jsonl")
-    vault = SecurityVault(data_dir / "vault.json", audit_logger=audit_logger)
-    voiceprint = VoiceprintVerifier(data_dir / "voiceprint.npz")
-    memory = ShortTermMemoryBuffer(maxlen=20)
-
-    folders = SandboxedFolderManager(audit_logger=audit_logger)
-    apps = SafeAppManager(platform_adapter=platform_adapter, audit_logger=audit_logger)
-    mouse = MouseController(audit_logger=audit_logger)
-    air_mouse = AirMouseController(
-        mouse_controller=mouse,
-        lock_callback=platform_adapter.lock_workstation,
-        volume_callback=platform_adapter.adjust_volume,
-        audit_logger=audit_logger,
-    )
-    tts = NativeTTSEngine(platform_adapter=platform_adapter)
-    router = IntentRouter(
-        memory=memory,
-        folder_manager=folders,
-        app_manager=apps,
-        mouse_controller=mouse,
-        air_mouse=air_mouse,
-        platform_adapter=platform_adapter,
-        audit_logger=audit_logger,
-    )
-
-    window = DynamicNotchWindow(
-        router=router,
-        tts=tts,
-        vault=vault,
-        voiceprint=voiceprint,
-        platform_adapter=platform_adapter,
-        audit_logger=audit_logger,
-    )
-
-    listener = WakeWordVoiceListener(
-        wake_word="notch",
-        on_command=window.handle_voice_transcript,
-        on_state_change=window.set_orb_state,
-    )
-    listener.start()
-    window.attach_listener(listener)
-    window.show()
-
-    audit_logger.log("system", "app_started", "allowed", f"platform={platform_adapter.name}")
-    exit_code = app.exec()
-    listener.stop()
-    air_mouse.emergency_stop()
-    mouse.emergency_stop()
-    tts.shutdown()
-    return exit_code
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+</Project>
 `,
   },
   {
-    path: "windows_notch_pro/platform_abstraction/base.py",
-    group: "Entry & Platform",
-    language: "python",
+    path: "app.manifest",
+    group: "WPF Desktop Overlay (.NET 8)",
+    language: "xml",
     summary:
-      "Cross-platform OS adapter layer isolating Windows DWM/DPAPI/SAPI calls with clean Linux and macOS abstractions for future releases.",
-    content: `"""Cross-platform OS abstraction layer (Windows 10/11 primary, Linux & macOS ready)."""
-from __future__ import annotations
+      "Per-Monitor V2 DPI awareness, Windows 10 & 11 compatibility GUIDs, and least-privilege asInvoker execution level.",
+    content: String.raw`<?xml version="1.0" encoding="utf-8"?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="2.0.0.0" name="WindowsNotchPro.app" />
 
-import abc
-import ctypes
-import subprocess
-import sys
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+    <security>
+      <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+        <!-- Standard user privilege: no unnecessary UAC prompts -->
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
 
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 and Windows 11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
 
-class PlatformAdapter(abc.ABC):
-    """Abstract interface decoupling desktop shell, DWM styling, lock, and TTS."""
-
-    @property
-    @abc.abstractmethod
-    def name(self) -> str:
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def apply_rounded_corners(self, native_hwnd: int) -> bool:
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def lock_workstation(self) -> bool:
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def adjust_volume(self, delta_steps: int) -> None:
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def speak_blocking(self, text: str) -> None:
-        raise NotImplementedError
-
-
-class WindowsPlatformAdapter(PlatformAdapter):
-    """Native Windows 10 & Windows 11 implementation using Win32, DWM, and SAPI."""
-
-    DWMWA_WINDOW_CORNER_PREFERENCE = 33
-    DWMWCP_ROUND = 2
-
-    @property
-    def name(self) -> str:
-        ver = sys.getwindowsversion()
-        return "windows11" if ver.build >= 22000 else "windows10"
-
-    def apply_rounded_corners(self, native_hwnd: int) -> bool:
-        """Apply Windows 11 native DWM rounded corners; graceful no-op on Windows 10."""
-        try:
-            ver = sys.getwindowsversion()
-            if ver.build < 22000:
-                return False  # Windows 10 falls back to Qt frameless rounded QPainterPath
-            preference = ctypes.c_int(self.DWMWCP_ROUND)
-            hr = ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                ctypes.c_void_p(native_hwnd),
-                ctypes.c_uint(self.DWMWA_WINDOW_CORNER_PREFERENCE),
-                ctypes.byref(preference),
-                ctypes.sizeof(preference),
-            )
-            return hr == 0
-        except Exception:
-            return False
-
-    def lock_workstation(self) -> bool:
-        try:
-            return bool(ctypes.windll.user32.LockWorkStation())
-        except Exception:
-            return False
-
-    def adjust_volume(self, delta_steps: int) -> None:
-        vk_volume_up = 0xAF
-        vk_volume_down = 0xAE
-        key = vk_volume_up if delta_steps > 0 else vk_volume_down
-        for _ in range(abs(delta_steps)):
-            ctypes.windll.user32.keybd_event(key, 0, 0, 0)
-            ctypes.windll.user32.keybd_event(key, 0, 2, 0)
-
-    def speak_blocking(self, text: str) -> None:
-        clean = text.strip()
-        if not clean:
-            return
-        try:
-            import win32com.client  # type: ignore
-
-            speaker = win32com.client.Dispatch("SAPI.SpVoice")
-            speaker.Speak(clean)
-        except Exception:
-            # Safe argument-vector invocation without shell=True using System.Speech
-            ps_script = (
-                "Add-Type -AssemblyName System.Speech; "
-                "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-                "$s.Speak($args[0])"
-            )
-            subprocess.run(
-                ["powershell", "-NoProfile", "-Command", ps_script, clean],
-                shell=False,
-                check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-
-
-class MacOSPlatformAdapter(PlatformAdapter):
-    """Future macOS adapter using AppKit, CoreGraphics, and NSSpeechSynthesizer ('say')."""
-
-    @property
-    def name(self) -> str:
-        return "macos"
-
-    def apply_rounded_corners(self, native_hwnd: int) -> bool:
-        return False
-
-    def lock_workstation(self) -> bool:
-        subprocess.run(["pmset", "displaysleepnow"], shell=False, check=False)
-        return True
-
-    def adjust_volume(self, delta_steps: int) -> None:
-        delta = delta_steps * 6
-        subprocess.run(
-            ["osascript", "-e", f"set volume output volume ((output volume of (get volume settings)) + {delta})"],
-            shell=False,
-            check=False,
-        )
-
-    def speak_blocking(self, text: str) -> None:
-        subprocess.run(["say", text], shell=False, check=False)
-
-
-class LinuxPlatformAdapter(PlatformAdapter):
-    """Future Linux adapter targeting Wayland/X11, loginctl, pactl, and espeak-ng."""
-
-    @property
-    def name(self) -> str:
-        return "linux"
-
-    def apply_rounded_corners(self, native_hwnd: int) -> bool:
-        return False
-
-    def lock_workstation(self) -> bool:
-        subprocess.run(["loginctl", "lock-session"], shell=False, check=False)
-        return True
-
-    def adjust_volume(self, delta_steps: int) -> None:
-        sign = "+" if delta_steps > 0 else "-"
-        subprocess.run(
-            ["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{sign}{abs(delta_steps) * 5}%"],
-            shell=False,
-            check=False,
-        )
-
-    def speak_blocking(self, text: str) -> None:
-        subprocess.run(["espeak-ng", text], shell=False, check=False)
-
-
-def create_platform_adapter() -> PlatformAdapter:
-    if sys.platform == "win32":
-        return WindowsPlatformAdapter()
-    if sys.platform == "darwin":
-        return MacOSPlatformAdapter()
-    return LinuxPlatformAdapter()
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <!-- Per-Monitor V2 DPI awareness for crisp scaling on 4K & multi-monitor setups -->
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
+    </windowsSettings>
+  </application>
+</assembly>
 `,
   },
   {
-    path: "windows_notch_pro/ui/notch_window.py",
-    group: "UI & Security Vault",
-    language: "python",
+    path: "App.xaml",
+    group: "WPF Desktop Overlay (.NET 8)",
+    language: "xaml",
     summary:
-      "Minimal top-center Dynamic Island (~248x48 idle pill -> ~440x148 conversational pop-down card) with translucent glassmorphism, glowing orb, Mic/Ask triggers, and zero button clutter.",
-    content: `"""2026 Minimal Conversational Dynamic Island UI (PyQt6)."""
-from __future__ import annotations
+      "WPF application theme resources with dark frosted-glass surfaces, crisp Segoe UI Variable typography, and minimal button styles.",
+    content: String.raw`<Application x:Class="WindowsNotchPro.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml"
+             ShutdownMode="OnMainWindowClose">
+    <Application.Resources>
+        <SolidColorBrush x:Key="GlassSurfaceBrush" Color="#DE12141C" />
+        <SolidColorBrush x:Key="GlassTileBrush" Color="#18FFFFFF" />
+        <SolidColorBrush x:Key="GlassBorderBrush" Color="#26FFFFFF" />
+        <SolidColorBrush x:Key="PrimaryTextBrush" Color="#F8FAFC" />
+        <SolidColorBrush x:Key="MutedTextBrush" Color="#94A3B8" />
+        <SolidColorBrush x:Key="AccentCyanBrush" Color="#38BDF8" />
+        <SolidColorBrush x:Key="AccentEmeraldBrush" Color="#34D399" />
 
-from typing import Optional
+        <Style x:Key="NotchIconButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#14FFFFFF" />
+            <Setter Property="Foreground" Value="#E2E8F0" />
+            <Setter Property="BorderBrush" Value="#20FFFFFF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="10"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#26FFFFFF" />
+                                <Setter Property="Foreground" Value="#FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#33FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
-from PyQt6.QtCore import (
-    QEasingCurve,
-    QPropertyAnimation,
-    QRect,
-    Qt,
-    QTimer,
-    pyqtSignal,
-)
-from PyQt6.QtGui import QColor, QGuiApplication, QLinearGradient, QPainter, QPainterPath, QPen
-from PyQt6.QtWidgets import (
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
-)
+        <Style x:Key="AuroraDotButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="12" />
+            <Setter Property="Height" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Dot"
+                                Width="10"
+                                Height="10"
+                                CornerRadius="5"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="#66FFFFFF"
+                                BorderThickness="1" />
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Dot" Property="Width" Value="12" />
+                                <Setter TargetName="Dot" Property="Height" Value="12" />
+                                <Setter TargetName="Dot" Property="CornerRadius" Value="6" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Application.Resources>
+</Application>
+`,
+  },
+  {
+    path: "App.xaml.cs",
+    group: "WPF Desktop Overlay (.NET 8)",
+    language: "csharp",
+    summary:
+      "Single-instance Mutex guard, unhandled exception auditing, and clean shutdown teardown.",
+    content: String.raw`using System;
+using System.Threading;
+using System.Windows;
+using WindowsNotchPro.Services;
 
-from windows_notch_pro.ui.security_vault_dialog import SecurityVaultDialog
+namespace WindowsNotchPro;
 
+public partial class App : Application
+{
+    private Mutex? _singleInstanceMutex;
 
-class DynamicNotchWindow(QWidget):
-    """Top-center translucent Dynamic Island: nameless by default, auto-hides inside browsers."""
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        bool createdNew;
+        _singleInstanceMutex = new Mutex(true, @"Local\WindowsNotchPro_SingleInstance", out createdNew);
 
-    IDLE_NAMELESS_WIDTH = 176
-    IDLE_NAMED_WIDTH = 248
-    IDLE_HEIGHT = 48
-    EXPANDED_WIDTH = 440
-    EXPANDED_HEIGHT = 148
-    TOP_MARGIN = 10
-    BROWSER_PROCESSES = frozenset({
-        "chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "arc.exe"
-    })
-
-    transcript_received = pyqtSignal(str)
-    orb_state_changed = pyqtSignal(str)
-
-    def __init__(self, router, tts, vault, voiceprint, platform_adapter, audit_logger):
-        super().__init__()
-        self.router = router
-        self.tts = tts
-        self.vault = vault
-        self.voiceprint = voiceprint
-        self.platform_adapter = platform_adapter
-        self.audit_logger = audit_logger
-        self._listener = None
-        self.assistant_name = ""  # Nameless by default until the user names it
-        self._expanded = False
-        self._hidden_for_browser = False
-        self._orb_state = "idle"
-        self._orb_phase = 0.0
-
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
-        )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-
-        self._build_ui()
-        self._position_top_center(self._idle_width(), self.IDLE_HEIGHT)
-        self.platform_adapter.apply_rounded_corners(int(self.winId()))
-
-        self.transcript_received.connect(self._execute_natural_language)
-        self.orb_state_changed.connect(self._apply_orb_state)
-
-        self._orb_timer = QTimer(self)
-        self._orb_timer.timeout.connect(self._tick_orb)
-        self._orb_timer.start(40)
-
-        # Monitor foreground browser window so tabs are never blocked
-        self._focus_timer = QTimer(self)
-        self._focus_timer.timeout.connect(self._poll_browser_auto_hide)
-        self._focus_timer.start(220)
-
-    def _idle_width(self) -> int:
-        return self.IDLE_NAMED_WIDTH if self.assistant_name else self.IDLE_NAMELESS_WIDTH
-
-    def set_assistant_name(self, name: str) -> None:
-        self.assistant_name = name.strip()[:28]
-        self.pill_label.setText(self.assistant_name)
-        self.pill_label.setVisible(bool(self.assistant_name))
-        self.input_bar.setPlaceholderText(
-            f"Ask {self.assistant_name} anything..."
-            if self.assistant_name
-            else "Ask anything... or give me a name"
-        )
-        if not self._expanded:
-            self._position_top_center(self._idle_width(), self.IDLE_HEIGHT)
-
-    def _is_browser_foreground(self) -> bool:
-        import ctypes, sys
-        if sys.platform != "win32":
-            return False
-        try:
-            import psutil  # type: ignore
-            hwnd = ctypes.windll.user32.GetForegroundWindow()
-            if not hwnd or hwnd == int(self.winId()):
-                return False
-            pid = ctypes.c_ulong(0)
-            ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-            proc_name = psutil.Process(pid.value).name().lower()
-            return proc_name in self.BROWSER_PROCESSES
-        except Exception:
-            return False
-
-    def _poll_browser_auto_hide(self) -> None:
-        from PyQt6.QtGui import QCursor
-        if self._expanded or self._orb_state in ("listening", "thinking", "speaking"):
-            if self._hidden_for_browser:
-                self._hidden_for_browser = False
-                self.show()
-            return
-        cursor = QCursor.pos()
-        screen = QGuiApplication.primaryScreen().availableGeometry()
-        near_top_center = (
-            cursor.y() <= screen.y() + 6
-            and abs(cursor.x() - (screen.x() + screen.width() // 2)) <= 160
-        )
-        should_hide = self._is_browser_foreground() and not near_top_center
-        if should_hide != self._hidden_for_browser:
-            self._hidden_for_browser = should_hide
-            self.hide() if should_hide else self.show()
-
-    def attach_listener(self, listener) -> None:
-        self._listener = listener
-
-    def _build_ui(self) -> None:
-        root_layout = QVBoxLayout(self)
-        root_layout.setContentsMargins(14, 8, 14, 10)
-        root_layout.setSpacing(8)
-
-        # Top Idle Pill Row: Glowing Orb + Status Text + Minimal Mic / Ask Triggers (Zero Clutter)
-        top_row = QHBoxLayout()
-        top_row.setSpacing(10)
-
-        self.orb_spacer = QWidget()
-        self.orb_spacer.setFixedSize(22, 22)
-        top_row.addWidget(self.orb_spacer)
-
-        self.pill_label = QLabel("")
-        self.pill_label.setVisible(False)
-        self.pill_label.setStyleSheet(
-            "color: #F1F5F9; font-size: 13px; font-weight: 600; background: transparent;"
-        )
-        top_row.addWidget(self.pill_label, 1)
-
-        self.mic_btn = QPushButton("Mic")
-        self.mic_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.mic_btn.setFixedHeight(28)
-        self.mic_btn.setStyleSheet(
-            "QPushButton { color: #E2E8F0; background: rgba(255,255,255,0.08); "
-            "border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 0 10px; font-size: 12px; }"
-            "QPushButton:hover { background: rgba(56,189,248,0.22); }"
-        )
-        self.mic_btn.clicked.connect(self._trigger_mic)
-        top_row.addWidget(self.mic_btn)
-
-        self.ask_btn = QPushButton("Ask")
-        self.ask_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.ask_btn.setFixedHeight(28)
-        self.ask_btn.setStyleSheet(
-            "QPushButton { color: #0F172A; background: #F8FAFC; border: none; "
-            "border-radius: 14px; padding: 0 11px; font-size: 12px; font-weight: 600; }"
-            "QPushButton:hover { background: #FFFFFF; }"
-        )
-        self.ask_btn.clicked.connect(self.toggle_expanded)
-        top_row.addWidget(self.ask_btn)
-
-        root_layout.addLayout(top_row)
-
-        # Pop-Down Conversational Card Container (Hidden when idle)
-        self.card_container = QWidget()
-        self.card_container.setVisible(False)
-        card_layout = QVBoxLayout(self.card_container)
-        card_layout.setContentsMargins(0, 2, 0, 0)
-        card_layout.setSpacing(8)
-
-        self.response_bubble = QLabel("Ready. Ask anything or give me a name.")
-        self.response_bubble.setWordWrap(True)
-        self.response_bubble.setStyleSheet(
-            "color: #E2E8F0; background: rgba(255,255,255,0.05); "
-            "border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; "
-            "padding: 8px 10px; font-size: 12px;"
-        )
-        card_layout.addWidget(self.response_bubble)
-
-        self.input_bar = QLineEdit()
-        self.input_bar.setPlaceholderText("Ask anything... or give me a name")
-        self.input_bar.setFixedHeight(34)
-        self.input_bar.setStyleSheet(
-            "QLineEdit { color: #F8FAFC; background: rgba(15,23,42,0.85); "
-            "border: 1px solid rgba(148,163,184,0.28); border-radius: 10px; "
-            "padding: 0 12px; font-size: 13px; }"
-            "QLineEdit:focus { border: 1px solid #38BDF8; }"
-        )
-        self.input_bar.returnPressed.connect(self._submit_input)
-        card_layout.addWidget(self.input_bar)
-
-        root_layout.addWidget(self.card_container)
-
-    def _position_top_center(self, width: int, height: int) -> None:
-        screen = QGuiApplication.primaryScreen().availableGeometry()
-        x = screen.x() + (screen.width() - width) // 2
-        y = screen.y() + self.TOP_MARGIN
-        self.setGeometry(x, y, width, height)
-
-    def toggle_expanded(self, force: Optional[bool] = None) -> None:
-        target_state = (not self._expanded) if force is None else force
-        if target_state == self._expanded:
-            return
-        self._expanded = target_state
-        screen = QGuiApplication.primaryScreen().availableGeometry()
-        target_w = self.EXPANDED_WIDTH if self._expanded else self._idle_width()
-        target_h = self.EXPANDED_HEIGHT if self._expanded else self.IDLE_HEIGHT
-        target_x = screen.x() + (screen.width() - target_w) // 2
-        target_rect = QRect(target_x, screen.y() + self.TOP_MARGIN, target_w, target_h)
-
-        self._anim = QPropertyAnimation(self, b"geometry")
-        self._anim.setDuration(190)
-        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self._anim.setStartValue(self.geometry())
-        self._anim.setEndValue(target_rect)
-        self._anim.start()
-
-        self.card_container.setVisible(self._expanded)
-        self.ask_btn.setText("Hide" if self._expanded else "Ask")
-        if self._expanded:
-            self.input_bar.setFocus()
-
-    def _trigger_mic(self) -> None:
-        self.toggle_expanded(force=True)
-        self.set_orb_state("listening")
-        if self._listener:
-            self._listener.trigger_manual_capture()
-
-    def _submit_input(self) -> None:
-        text = self.input_bar.text().strip()
-        if not text:
-            return
-        self.input_bar.clear()
-        self._execute_natural_language(text)
-
-    def handle_voice_transcript(self, text: str) -> None:
-        self.transcript_received.emit(text)
-
-    def set_orb_state(self, state: str) -> None:
-        self.orb_state_changed.emit(state)
-
-    def _apply_orb_state(self, state: str) -> None:
-        self._orb_state = state
-        labels = {
-            "idle": self.assistant_name,
-            "listening": "Listening...",
-            "thinking": "Thinking...",
-            "speaking": self.assistant_name or "Speaking...",
+        if (!createdNew)
+        {
+            MessageBox.Show(
+                "NOVA / WindowsNotch Pro is already running at the top of your desktop.",
+                "WindowsNotch Pro",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            Shutdown();
+            return;
         }
-        txt = labels.get(state, self.assistant_name)
-        self.pill_label.setText(txt)
-        self.pill_label.setVisible(bool(txt))
-        self.update()
 
-    def _execute_natural_language(self, utterance: str) -> None:
-        self.show()
-        self.toggle_expanded(force=True)
-        self._apply_orb_state("thinking")
-        result = self.router.handle_utterance(utterance)
-        if result.action == "open_vault":
-            dlg = SecurityVaultDialog(self.vault, self.voiceprint, self)
-            dlg.exec()
-        elif result.action == "set_assistant_name":
-            self.set_assistant_name(result.resolved_reference)
-        self.response_bubble.setText(result.reply)
-        self._apply_orb_state("speaking")
-        self.tts.speak_async(result.reply, on_done=lambda: self.set_orb_state("idle"))
+        DispatcherUnhandledException += (_, args) =>
+        {
+            AuditLogger.Instance.Log("system", "unhandled_exception", "blocked", args.Exception.Message);
+            NativeInterop.TriggerEmergencyStop();
+            args.Handled = true;
+        };
 
-    def _tick_orb(self) -> None:
-        self._orb_phase = (self._orb_phase + 0.08) % 6.28318
-        self.update()
+        base.OnStartup(e);
+    }
 
-    def paintEvent(self, _event) -> None:
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        rect = self.rect().adjusted(1, 1, -1, -1)
-        radius = 22 if self._expanded else 24
-        path = QPainterPath()
-        path.addRoundedRect(rect.x(), rect.y(), rect.width(), rect.height(), radius, radius)
-
-        # Translucent dark glassmorphism body + crisp 1px highlight border
-        painter.fillPath(path, QColor(11, 15, 23, 224))
-        painter.setPen(QPen(QColor(255, 255, 255, 38), 1.0))
-        painter.drawPath(path)
-
-        # Glowing animated AI orb in top-left slot
-        orb_cx, orb_cy = 25, 24
-        grad = QLinearGradient(orb_cx - 10, orb_cy - 10, orb_cx + 10, orb_cy + 10)
-        if self._orb_state == "listening":
-            grad.setColorAt(0.0, QColor("#34D399"))
-            grad.setColorAt(1.0, QColor("#0EA5E9"))
-        elif self._orb_state == "thinking":
-            grad.setColorAt(0.0, QColor("#F59E0B"))
-            grad.setColorAt(1.0, QColor("#38BDF8"))
-        else:
-            grad.setColorAt(0.0, QColor("#38BDF8"))
-            grad.setColorAt(1.0, QColor("#6366F1"))
-
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(grad)
-        painter.drawEllipse(orb_cx - 9, orb_cy - 9, 18, 18)
+    protected override void OnExit(ExitEventArgs e)
+    {
+        NativeInterop.TriggerEmergencyStop();
+        _singleInstanceMutex?.ReleaseMutex();
+        _singleInstanceMutex?.Dispose();
+        base.OnExit(e);
+    }
+}
 `,
   },
   {
-    path: "windows_notch_pro/ui/security_vault_dialog.py",
-    group: "UI & Security Vault",
-    language: "python",
+    path: "MainWindow.xaml",
+    group: "WPF Desktop Overlay (.NET 8)",
+    language: "xaml",
     summary:
-      "In-app Security Vault modal for setting the PBKDF2-HMAC-SHA256 passphrase, storing DPAPI-encrypted Windows login credentials, and recording a 3-second MFCC voiceprint.",
-    content: `"""In-App Security Vault Dialog (Passphrase, DPAPI Credentials, 3-Second Voiceprint)."""
-from __future__ import annotations
+      "Frameless, transparent, always-on-top Dynamic Island (248x48 idle pill expanding to dark frosted-glass Bento & conversational AI card with aurora themes).",
+    content: String.raw`<Window x:Class="WindowsNotchPro.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="NOVA"
+        Width="248"
+        Height="48"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        Loaded="Window_Loaded"
+        Closing="Window_Closing"
+        KeyDown="Window_KeyDown"
+        MouseEnter="Window_MouseEnter"
+        MouseLeave="Window_MouseLeave">
 
-import threading
+    <!-- Outer Padding holds subtle glow without clipping -->
+    <Grid Margin="6">
+        <Border x:Name="NotchShell"
+                CornerRadius="22"
+                Background="{StaticResource GlassSurfaceBrush}"
+                BorderBrush="{StaticResource GlassBorderBrush}"
+                BorderThickness="1"
+                SnapsToDevicePixels="True"
+                ClipToBounds="True">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="22" ShadowDepth="6" Opacity="0.58" Color="#000000" />
+            </Border.Effect>
 
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import (
-    QDialog,
-    QFormLayout,
-    QLabel,
-    QLineEdit,
-    QMessageBox,
-    QPushButton,
-    QVBoxLayout,
-)
+            <Grid>
+                <!-- Animated Aurora Ambient Background Glow -->
+                <Border x:Name="AuroraBackdrop" Opacity="0.42" IsHitTestVisible="False">
+                    <Border.Background>
+                        <RadialGradientBrush Center="0.22,0.12" GradientOrigin="0.22,0.12" RadiusX="0.95" RadiusY="1.15">
+                            <GradientStop x:Name="AuroraStopPrimary" Color="#38BDF8" Offset="0.0" />
+                            <GradientStop x:Name="AuroraStopSecondary" Color="#8B5CF6" Offset="0.48" />
+                            <GradientStop Color="#0012141C" Offset="1.0" />
+                        </RadialGradientBrush>
+                    </Border.Background>
+                </Border>
 
+                <!-- 1. COLLAPSED IDLE PILL (248x48) -->
+                <Grid x:Name="CollapsedPillView"
+                      Height="36"
+                      Margin="10,0"
+                      VerticalAlignment="Center"
+                      Cursor="Hand"
+                      MouseLeftButtonUp="CollapsedPill_Click">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-class SecurityVaultDialog(QDialog):
-    """Configures 2FA voice unlock credentials and enrolls 3-second speaker voiceprint."""
+                    <!-- Glowing Optical AI Orb -->
+                    <Grid Grid.Column="0" Width="22" Height="22" VerticalAlignment="Center">
+                        <Ellipse x:Name="CollapsedOrbGlow" Fill="#6638BDF8" Width="22" Height="22">
+                            <Ellipse.Effect>
+                                <BlurEffect Radius="8" />
+                            </Ellipse.Effect>
+                        </Ellipse>
+                        <Ellipse Width="12" Height="12" Stroke="#99FFFFFF" StrokeThickness="1">
+                            <Ellipse.Fill>
+                                <RadialGradientBrush>
+                                    <GradientStop Color="#FFFFFF" Offset="0.0" />
+                                    <GradientStop x:Name="CollapsedOrbCore" Color="#38BDF8" Offset="0.65" />
+                                    <GradientStop Color="#0F172A" Offset="1.0" />
+                                </RadialGradientBrush>
+                            </Ellipse.Fill>
+                        </Ellipse>
+                    </Grid>
 
-    voiceprint_done = pyqtSignal(bool, str)
+                    <TextBlock x:Name="CollapsedStatusText"
+                               Grid.Column="1"
+                               Margin="9,0,8,0"
+                               VerticalAlignment="Center"
+                               Text="NOVA · Armed"
+                               Foreground="{StaticResource PrimaryTextBrush}"
+                               FontFamily="Segoe UI Variable Text, Segoe UI"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis" />
 
-    def __init__(self, vault, voiceprint_verifier, parent=None):
-        super().__init__(parent)
-        self.vault = vault
-        self.voiceprint = voiceprint_verifier
-        self.setWindowTitle("WindowsNotch Pro — Security Vault")
-        self.setFixedWidth(440)
-        self.setStyleSheet(
-            "QDialog { background: #0F172A; color: #F1F5F9; }"
-            "QLineEdit { background: #1E293B; color: #F8FAFC; border: 1px solid #334155; "
-            "border-radius: 6px; padding: 6px 8px; }"
-            "QPushButton { background: #0284C7; color: white; border: none; "
-            "border-radius: 6px; padding: 8px 14px; font-weight: 600; }"
-        )
+                    <TextBlock x:Name="CollapsedClockText"
+                               Grid.Column="2"
+                               VerticalAlignment="Center"
+                               Text="12:00"
+                               Foreground="{StaticResource MutedTextBrush}"
+                               FontFamily="Cascadia Mono, Consolas"
+                               FontSize="11" />
+                </Grid>
 
-        layout = QVBoxLayout(self)
-        form = QFormLayout()
+                <!-- 2. EXPANDED FROSTED-GLASS BENTO & CONVERSATIONAL AI CARD -->
+                <Grid x:Name="ExpandedCardView" Visibility="Collapsed" Margin="18,14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
 
-        self.passphrase_input = QLineEdit()
-        self.passphrase_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.passphrase_input.setPlaceholderText("Spoken unlock passphrase (min 8 chars)")
-        form.addRow("2FA Passphrase:", self.passphrase_input)
+                    <!-- Header: Glowing Orb + Name + Aurora Theme Switcher + Voice + Collapse -->
+                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
 
-        self.account_input = QLineEdit()
-        self.account_input.setPlaceholderText(r".\\Username or DOMAIN\\Username")
-        form.addRow("Windows Account:", self.account_input)
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Grid Width="24" Height="24" Margin="0,0,10,0">
+                                <Ellipse x:Name="ExpandedOrbGlow" Fill="#7738BDF8" Width="24" Height="24">
+                                    <Ellipse.Effect>
+                                        <BlurEffect Radius="10" />
+                                    </Ellipse.Effect>
+                                </Ellipse>
+                                <Ellipse Width="13" Height="13" Stroke="#B3FFFFFF" StrokeThickness="1">
+                                    <Ellipse.Fill>
+                                        <RadialGradientBrush>
+                                            <GradientStop Color="#FFFFFF" Offset="0.0" />
+                                            <GradientStop x:Name="ExpandedOrbCore" Color="#38BDF8" Offset="0.7" />
+                                            <GradientStop Color="#0F172A" Offset="1.0" />
+                                        </RadialGradientBrush>
+                                    </Ellipse.Fill>
+                                </Ellipse>
+                            </Grid>
 
-        self.password_input = QLineEdit()
-        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.password_input.setPlaceholderText("Encrypted via Windows DPAPI (never plaintext)")
-        form.addRow("Windows Password:", self.password_input)
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock x:Name="AssistantNameText"
+                                           Text="NOVA"
+                                           Foreground="#FFFFFF"
+                                           FontFamily="Segoe UI Variable Display, Segoe UI"
+                                           FontSize="13.5"
+                                           FontWeight="SemiBold" />
+                                <TextBlock x:Name="VoiceStateSubtitle"
+                                           Text="Native Win32 · Ready"
+                                           Foreground="{StaticResource MutedTextBrush}"
+                                           FontSize="10.5" />
+                            </StackPanel>
+                        </StackPanel>
 
-        layout.addLayout(form)
+                        <!-- Aurora Theme Dots + Mic + Collapse -->
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
+                                <Button Style="{StaticResource AuroraDotButtonStyle}" Background="#38BDF8" ToolTip="Aurora Cyan-Violet" Tag="0" Click="ThemeDot_Click" Margin="0,0,5,0" />
+                                <Button Style="{StaticResource AuroraDotButtonStyle}" Background="#EC4899" ToolTip="Rose-Magenta" Tag="1" Click="ThemeDot_Click" Margin="0,0,5,0" />
+                                <Button Style="{StaticResource AuroraDotButtonStyle}" Background="#34D399" ToolTip="Emerald Pulse" Tag="2" Click="ThemeDot_Click" Margin="0,0,5,0" />
+                                <Button Style="{StaticResource AuroraDotButtonStyle}" Background="#F59E0B" ToolTip="Solar Amber" Tag="3" Click="ThemeDot_Click" Margin="0,0,6,0" />
+                                <Button x:Name="AutoAuroraButton"
+                                        Style="{StaticResource NotchIconButtonStyle}"
+                                        Content="Auto"
+                                        Padding="7,2"
+                                        FontSize="10"
+                                        Click="AutoAurora_Click" />
+                            </StackPanel>
 
-        self.save_btn = QPushButton("Save Passphrase & Seal DPAPI Credentials")
-        self.save_btn.clicked.connect(self._save_credentials)
-        layout.addWidget(self.save_btn)
+                            <Button x:Name="VoiceListenButton"
+                                    Style="{StaticResource NotchIconButtonStyle}"
+                                    Content="Mic"
+                                    Click="VoiceListen_Click"
+                                    Margin="0,0,6,0" />
 
-        self.enroll_status = QLabel("Voiceprint: Not enrolled")
-        layout.addWidget(self.enroll_status)
+                            <Button Style="{StaticResource NotchIconButtonStyle}"
+                                    Content="Hide"
+                                    Click="CollapseNotch_Click" />
+                        </StackPanel>
+                    </Grid>
 
-        self.record_btn = QPushButton("Record 3-Second Voiceprint")
-        self.record_btn.clicked.connect(self._record_voiceprint)
-        layout.addWidget(self.record_btn)
+                    <!-- Clean Conversational Prompt Bar -->
+                    <Border Grid.Row="1"
+                            CornerRadius="14"
+                            Background="#24000000"
+                            BorderBrush="#22FFFFFF"
+                            BorderThickness="1"
+                            Padding="12,6"
+                            Margin="0,0,0,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
 
-        self.voiceprint_done.connect(self._on_voiceprint_done)
+                            <TextBox x:Name="CommandInputBox"
+                                     Grid.Column="0"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Foreground="#FFFFFF"
+                                     CaretBrush="#38BDF8"
+                                     FontFamily="Segoe UI Variable Text, Segoe UI"
+                                     FontSize="13"
+                                     VerticalContentAlignment="Center"
+                                     KeyDown="CommandInputBox_KeyDown" />
 
-    def _save_credentials(self) -> None:
-        passphrase = self.passphrase_input.text().strip()
-        account = self.account_input.text().strip()
-        password = self.password_input.text()
+                            <TextBlock x:Name="CommandPlaceholder"
+                                       Grid.Column="0"
+                                       Text="Ask Notch AI anything..."
+                                       Foreground="#64748B"
+                                       FontSize="13"
+                                       VerticalAlignment="Center"
+                                       IsHitTestVisible="False" />
 
-        if len(passphrase) < 8:
-            QMessageBox.warning(self, "Weak Passphrase", "Use at least 8 characters.")
-            return
-        self.vault.set_passphrase(passphrase)
-        if account and password:
-            self.vault.store_windows_credentials(account, password)
-        self.passphrase_input.clear()
-        self.password_input.clear()
-        QMessageBox.information(
-            self,
-            "Vault Updated",
-            "Passphrase hashed (PBKDF2-HMAC-SHA256, 200,000 iterations) and credentials DPAPI-sealed.",
-        )
+                            <Button Grid.Column="1"
+                                    Style="{StaticResource NotchIconButtonStyle}"
+                                    Content="Ask"
+                                    Padding="12,5"
+                                    Background="#2E38BDF8"
+                                    BorderBrush="#5538BDF8"
+                                    Foreground="#FFFFFF"
+                                    Click="SubmitCommand_Click" />
+                        </Grid>
+                    </Border>
 
-    def _record_voiceprint(self) -> None:
-        self.record_btn.setEnabled(False)
-        self.enroll_status.setText("Recording 3 seconds... Speak naturally now.")
+                    <!-- Conversational Spoken Reply Panel -->
+                    <Border Grid.Row="2"
+                            CornerRadius="14"
+                            Background="#14FFFFFF"
+                            BorderBrush="#18FFFFFF"
+                            BorderThickness="1"
+                            Padding="13,10"
+                            Margin="0,0,0,12">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <TextBlock x:Name="AssistantReplyText"
+                                       Text="Ready. Ask me to open or close apps, manage Desktop/Documents/Downloads folders, keep your PC awake, or lock your workstation."
+                                       Foreground="#E2E8F0"
+                                       FontFamily="Segoe UI Variable Text, Segoe UI"
+                                       FontSize="12.5"
+                                       LineHeight="19"
+                                       TextWrapping="Wrap" />
+                        </ScrollViewer>
+                    </Border>
 
-        def worker() -> None:
-            try:
-                samples = self.voiceprint.capture_microphone_seconds(seconds=3.0)
-                self.voiceprint.enroll(samples)
-                self.voiceprint_done.emit(True, "3-second MFCC voiceprint enrolled locally.")
-            except Exception as exc:
-                self.voiceprint_done.emit(False, f"Enrollment failed: {exc}")
+                    <!-- Compact Bento Telemetry & Essential Controls (No Cluttered Icon Rows) -->
+                    <Grid Grid.Row="3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
 
-        threading.Thread(target=worker, daemon=True).start()
+                        <Border Grid.Column="0"
+                                CornerRadius="11"
+                                Background="#12FFFFFF"
+                                Padding="10,6"
+                                Margin="0,0,8,0">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock x:Name="FocusTimerText"
+                                           Text="25:00"
+                                           Foreground="{StaticResource AccentEmeraldBrush}"
+                                           FontFamily="Cascadia Mono, Consolas"
+                                           FontWeight="SemiBold"
+                                           FontSize="12"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,8,0" />
+                                <Button x:Name="FocusTimerToggleBtn"
+                                        Style="{StaticResource NotchIconButtonStyle}"
+                                        Content="Focus"
+                                        Padding="8,3"
+                                        FontSize="10.5"
+                                        Click="FocusTimerToggle_Click" />
+                            </StackPanel>
+                        </Border>
 
-    def _on_voiceprint_done(self, ok: bool, message: str) -> None:
-        self.record_btn.setEnabled(True)
-        self.enroll_status.setText(message)
-        if not ok:
-            QMessageBox.warning(self, "Voiceprint Error", message)
+                        <Button x:Name="KeepAwakeButton"
+                                Grid.Column="1"
+                                Style="{StaticResource NotchIconButtonStyle}"
+                                Content="Coffee: Off"
+                                Click="KeepAwake_Click"
+                                Margin="0,0,8,0" />
+
+                        <Button x:Name="MuteTtsButton"
+                                Grid.Column="2"
+                                Style="{StaticResource NotchIconButtonStyle}"
+                                Content="Voice: On"
+                                Click="MuteTts_Click"
+                                Margin="0,0,8,0" />
+
+                        <Button Grid.Column="3"
+                                Style="{StaticResource NotchIconButtonStyle}"
+                                Content="Lock PC"
+                                Background="#26F43F5E"
+                                BorderBrush="#44F43F5E"
+                                Click="LockPc_Click" />
+                    </Grid>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
 `,
   },
   {
-    path: "windows_notch_pro/ai/memory_buffer.py",
-    group: "AI & Short-Term Memory",
-    language: "python",
+    path: "MainWindow.xaml.cs",
+    group: "WPF Desktop Overlay (.NET 8)",
+    language: "csharp",
     summary:
-      "Thread-safe 5-turn sliding window short-term memory buffer resolving relative references like 'do that for the new folder instead' or 'what was that last app I opened?'.",
-    content: `"""Short-Term Memory Management System (5-Turn Sliding Window Buffer)."""
-from __future__ import annotations
+      "Top-center DPI-aware anchoring, smooth pill-to-Bento animation, auto-cycling aurora colors, two-way System.Speech voice talk-back, and local Companion Server wiring.",
+    content: String.raw`using System;
+using System.Speech.Recognition;
+using System.Speech.Synthesis;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Threading;
+using WindowsNotchPro.Services;
 
-from collections import deque
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-import re
-import threading
-from typing import Any, Deque, Dict, List, Optional
+namespace WindowsNotchPro;
 
+public partial class MainWindow : Window
+{
+    private const double CollapsedWidth = 248;
+    private const double CollapsedHeight = 48;
+    private const double ExpandedWidth = 640;
+    private const double ExpandedHeight = 296;
+    private const int WmDpiChanged = 0x02E0;
 
-@dataclass(frozen=True)
-class InteractionRecord:
-    """Single user interaction stored in the 5-turn sliding window."""
+    private readonly SafeFileManager _fileManager;
+    private readonly SafeAppManager _appManager;
+    private readonly SecurityVault _securityVault;
+    private readonly CommandParser _commandParser;
+    private readonly CompanionServer _companionServer;
 
-    turn_id: int
-    timestamp: str
-    user_utterance: str
-    intent: str
-    parameters: Dict[str, Any] = field(default_factory=dict)
-    assistant_reply: str = ""
-    outcome: str = "executed"
+    private readonly SpeechSynthesizer _synthesizer = new();
+    private SpeechRecognitionEngine? _speechRecognizer;
+    private bool _isListening;
+    private bool _ttsMuted;
+    private bool _isExpanded;
+    private bool _autoAurora = true;
+    private int _auroraIndex;
+    private bool _keepAwakeActive;
+    private CancellationTokenSource? _patrolCts;
 
+    private readonly DispatcherTimer _clockTimer = new();
+    private readonly DispatcherTimer _auroraTimer = new();
+    private readonly DispatcherTimer _focusTimer = new();
+    private int _focusSecondsRemaining = 25 * 60;
+    private bool _focusRunning;
 
-class ShortTermMemoryBuffer:
-    """Thread-safe sliding window buffer tracking the last N (default 20) interactions."""
+    private static readonly (Color Primary, Color Secondary)[] AuroraThemes =
+    {
+        (Color.FromRgb(56, 189, 248), Color.FromRgb(139, 92, 246)),  // Aurora Cyan-Violet
+        (Color.FromRgb(236, 72, 153), Color.FromRgb(168, 85, 247)),  // Rose-Magenta
+        (Color.FromRgb(52, 211, 153), Color.FromRgb(20, 184, 166)),  // Emerald Pulse
+        (Color.FromRgb(245, 158, 11), Color.FromRgb(249, 115, 22)),  // Solar Amber
+    };
 
-    def __init__(self, maxlen: int = 20) -> None:
-        if maxlen < 1:
-            raise ValueError("maxlen must be >= 1")
-        self._maxlen = maxlen
-        self._buffer: Deque[InteractionRecord] = deque(maxlen=maxlen)
-        self._lock = threading.RLock()
-        self._turn_counter = 0
+    public MainWindow()
+    {
+        InitializeComponent();
 
-    @property
-    def maxlen(self) -> int:
-        return self._maxlen
+        _fileManager = new SafeFileManager(AuditLogger.Instance);
+        _appManager = new SafeAppManager(AuditLogger.Instance);
+        _securityVault = new SecurityVault(AuditLogger.Instance);
+        _commandParser = new CommandParser(_fileManager, _appManager, _securityVault, AuditLogger.Instance);
+        _companionServer = new CompanionServer(_commandParser, _securityVault, AuditLogger.Instance);
 
-    def record(
-        self,
-        user_utterance: str,
-        intent: str,
-        parameters: Optional[Dict[str, Any]] = None,
-        assistant_reply: str = "",
-        outcome: str = "executed",
-    ) -> InteractionRecord:
-        with self._lock:
-            self._turn_counter += 1
-            entry = InteractionRecord(
-                turn_id=self._turn_counter,
-                timestamp=datetime.now(timezone.utc).isoformat(),
-                user_utterance=user_utterance.strip(),
-                intent=intent,
-                parameters=dict(parameters or {}),
-                assistant_reply=assistant_reply,
-                outcome=outcome,
-            )
-            self._buffer.append(entry)
-            return entry
+        CommandInputBox.TextChanged += (_, _) =>
+        {
+            CommandPlaceholder.Visibility = string.IsNullOrEmpty(CommandInputBox.Text)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        };
 
-    def snapshot(self) -> List[InteractionRecord]:
-        with self._lock:
-            return list(self._buffer)
+        ConfigureSpeechSynthesis();
+        ConfigureTimers();
+    }
 
-    def clear(self) -> None:
-        with self._lock:
-            self._buffer.clear()
+    private void Window_Loaded(object sender, RoutedEventArgs e)
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        NativeInterop.EnableRoundedCorners(hwnd);
 
-    def get_last_app(self, action_filter: Optional[str] = "app_open") -> Optional[str]:
-        """Return the most recently referenced or opened application within the window."""
-        with self._lock:
-            for item in reversed(self._buffer):
-                if action_filter and item.intent != action_filter:
-                    continue
-                if item.outcome == "executed" and item.parameters.get("target"):
-                    return str(item.parameters["target"])
-            return None
+        var source = HwndSource.FromHwnd(hwnd);
+        source?.AddHook(WndProc);
 
-    def get_last_folder(self) -> Optional[Dict[str, str]]:
-        """Return the most recently created or renamed folder within the window."""
-        with self._lock:
-            for item in reversed(self._buffer):
-                if item.intent in ("folder_create", "folder_rename") and item.outcome == "executed":
-                    name = (
-                        item.parameters.get("new_name")
-                        if item.intent == "folder_rename"
-                        else item.parameters.get("target")
-                    )
-                    if name:
-                        return {
-                            "name": str(name),
-                            "root": str(item.parameters.get("root", "Desktop")),
-                        }
-            return None
+        AnchorTopCenter(CollapsedWidth);
+        InitializeSpeechRecognition();
 
-    def get_last_action(self) -> Optional[InteractionRecord]:
-        """Return the most recent non-Q&A executable action in the sliding window."""
-        with self._lock:
-            for item in reversed(self._buffer):
-                if item.intent not in ("general_qa", "memory_recall"):
-                    return item
-            return None
-
-    def resolve_relative_command(self, utterance: str) -> Optional[Dict[str, Any]]:
-        """Resolve anaphoric/relative commands against the 5-turn sliding window.
-
-        Supports patterns such as:
-          - 'what was that last app I opened?'
-          - 'what folder did I just create?'
-          - 'do that for the new folder instead' / 'do that for Reports instead'
-          - 'rename it to Archive' / 'delete it' / 'close that app'
-        """
-        lower = utterance.strip().lower()
-
-        # 1. Recall: "what was that last app I opened?"
-        if re.search(r"what\s+(was\s+)?(that\s+)?last\s+app", lower) or "last app i opened" in lower:
-            last_app = self.get_last_app("app_open")
-            if last_app:
-                return {
-                    "intent": "memory_recall",
-                    "resolved_reference": f"Last opened app in 5-turn window: {last_app}",
-                    "reply": f"The last app you opened was {last_app}.",
-                }
-            return {
-                "intent": "memory_recall",
-                "resolved_reference": "No app_open event in last 5 interactions",
-                "reply": "You haven't opened any app in the last five interactions.",
-            }
-
-        # 2. Recall: "what was that last folder?"
-        if re.search(r"what\s+(was\s+)?(that\s+)?(last|new)\s+folder", lower):
-            last_folder = self.get_last_folder()
-            if last_folder:
-                return {
-                    "intent": "memory_recall",
-                    "resolved_reference": f"Last folder in window: {last_folder['root']}\\{last_folder['name']}",
-                    "reply": f"Your most recent folder is {last_folder['name']} in {last_folder['root']}.",
-                }
-            return {
-                "intent": "memory_recall",
-                "resolved_reference": "No folder action in last 5 interactions",
-                "reply": "No folder has been created or modified in the last five interactions.",
-            }
-
-        # 3. Repeat previous action for a different target: "do that for <target> instead"
-        repeat_match = re.search(
-            r"do\s+that\s+(?:for|on|to)\s+(?:the\s+)?(.+?)(?:\s+instead)?$",
-            utterance.strip(),
-            re.IGNORECASE,
-        )
-        if repeat_match:
-            last_act = self.get_last_action()
-            if last_act:
-                phrase = repeat_match.group(1).strip().strip("\"'")
-                resolved_target = phrase
-                resolved_root = str(last_act.parameters.get("root", "Desktop"))
-                if phrase.lower() in ("new folder", "the new folder", "last folder"):
-                    recent_folder = self.get_last_folder()
-                    if recent_folder:
-                        resolved_target = recent_folder["name"]
-                        resolved_root = recent_folder["root"]
-                return {
-                    "intent": last_act.intent,
-                    "target": resolved_target,
-                    "root": resolved_root,
-                    "resolved_reference": f"Repeated '{last_act.intent}' on '{resolved_target}' from turn #{last_act.turn_id}",
-                }
-
-        # 4. Pronoun folder rename: "rename it to <NewName>"
-        rename_it = re.search(r"rename\s+(?:it|that|the\s+new\s+folder)\s+to\s+(.+)$", utterance.strip(), re.IGNORECASE)
-        if rename_it:
-            last_folder = self.get_last_folder()
-            if last_folder:
-                return {
-                    "intent": "folder_rename",
-                    "target": last_folder["name"],
-                    "new_name": rename_it.group(1).strip(),
-                    "root": last_folder["root"],
-                    "resolved_reference": f"Resolved 'it' -> {last_folder['root']}\\{last_folder['name']}",
-                }
-
-        # 5. Pronoun folder delete: "delete it" / "delete that folder"
-        if re.fullmatch(r"(delete|remove)\s+(it|that|that\s+folder|the\s+new\s+folder)", lower):
-            last_folder = self.get_last_folder()
-            if last_folder:
-                return {
-                    "intent": "folder_delete",
-                    "target": last_folder["name"],
-                    "root": last_folder["root"],
-                    "resolved_reference": f"Resolved pronoun -> {last_folder['root']}\\{last_folder['name']}",
-                }
-
-        # 6. Pronoun app close: "close it" / "close that app"
-        if re.fullmatch(r"(close|quit)\s+(it|that|that\s+app|the\s+last\s+app)", lower):
-            last_app = self.get_last_app("app_open")
-            if last_app:
-                return {
-                    "intent": "app_close",
-                    "target": last_app,
-                    "resolved_reference": f"Resolved pronoun -> {last_app}",
-                }
-
-        return None
-
-    def format_prompt_context(self) -> List[Dict[str, Any]]:
-        """Serialize the 5-turn sliding window for LLM prompt injection."""
-        return [
+        // Start loopback-only token-authenticated companion server for Kotlin client
+        _companionServer.OnCommandExecuted += reply =>
+        {
+            Dispatcher.Invoke(() =>
             {
-                "turn": item.turn_id,
-                "user": item.user_utterance,
-                "intent": item.intent,
-                "parameters": item.parameters,
-                "reply": item.assistant_reply,
-                "outcome": item.outcome,
+                AssistantReplyText.Text = reply;
+                SpeakReply(reply);
+            });
+        };
+        _companionServer.Start();
+
+        AuditLogger.Instance.Log(
+            "system",
+            "notch_started",
+            "allowed",
+            $"Per-Monitor V2 DPI active · Companion listening on {_companionServer.ListenUrl}");
+    }
+
+    private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        StopKeepAwakePatrol();
+        _companionServer.Dispose();
+        _speechRecognizer?.Dispose();
+        _synthesizer.Dispose();
+    }
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == WmDpiChanged)
+        {
+            Dispatcher.BeginInvoke(() => AnchorTopCenter(_isExpanded ? ExpandedWidth : CollapsedWidth));
+        }
+        return IntPtr.Zero;
+    }
+
+    private void AnchorTopCenter(double targetWidth)
+    {
+        var area = SystemParameters.WorkArea;
+        Left = area.Left + (area.Width - targetWidth) / 2.0;
+        Top = area.Top + 6;
+    }
+
+    private void ConfigureSpeechSynthesis()
+    {
+        try
+        {
+            _synthesizer.SetOutputToDefaultAudioDevice();
+            _synthesizer.Rate = 1;
+            _synthesizer.Volume = 95;
+        }
+        catch (Exception ex)
+        {
+            AuditLogger.Instance.Log("system", "tts_init_warning", "warning", ex.Message);
+        }
+    }
+
+    private void InitializeSpeechRecognition()
+    {
+        try
+        {
+            _speechRecognizer = new SpeechRecognitionEngine();
+            _speechRecognizer.LoadGrammar(new DictationGrammar());
+            _speechRecognizer.SetInputToDefaultAudioDevice();
+            _speechRecognizer.SpeechRecognized += async (_, args) =>
+            {
+                if (args.Result.Confidence < 0.45f) return;
+                var spoken = args.Result.Text.Trim();
+                if (string.IsNullOrEmpty(spoken)) return;
+
+                await Dispatcher.InvokeAsync(async () =>
+                {
+                    CommandInputBox.Text = spoken;
+                    await ExecuteUserPromptAsync(spoken);
+                });
+            };
+        }
+        catch (Exception ex)
+        {
+            _speechRecognizer = null;
+            AuditLogger.Instance.Log("system", "stt_unavailable", "info", ex.Message);
+        }
+    }
+
+    private void ConfigureTimers()
+    {
+        _clockTimer.Interval = TimeSpan.FromSeconds(1);
+        _clockTimer.Tick += (_, _) => CollapsedClockText.Text = DateTime.Now.ToString("HH:mm");
+        _clockTimer.Start();
+        CollapsedClockText.Text = DateTime.Now.ToString("HH:mm");
+
+        _auroraTimer.Interval = TimeSpan.FromSeconds(4.5);
+        _auroraTimer.Tick += (_, _) =>
+        {
+            if (!_autoAurora) return;
+            _auroraIndex = (_auroraIndex + 1) % AuroraThemes.Length;
+            ApplyAuroraTheme(AuroraThemes[_auroraIndex].Primary, AuroraThemes[_auroraIndex].Secondary);
+        };
+        _auroraTimer.Start();
+
+        _focusTimer.Interval = TimeSpan.FromSeconds(1);
+        _focusTimer.Tick += (_, _) =>
+        {
+            if (!_focusRunning) return;
+            if (_focusSecondsRemaining > 0)
+            {
+                _focusSecondsRemaining--;
+                var ts = TimeSpan.FromSeconds(_focusSecondsRemaining);
+                FocusTimerText.Text = ts.ToString(@"mm\:ss");
             }
-            for item in self.snapshot()
-        ]
+            else
+            {
+                _focusRunning = false;
+                FocusTimerToggleBtn.Content = "Focus";
+                SpeakReply("Focus session complete.");
+            }
+        };
+        _focusTimer.Start();
+    }
+
+    private void ApplyAuroraTheme(Color primary, Color secondary)
+    {
+        var duration = TimeSpan.FromMilliseconds(1400);
+        AuroraStopPrimary.BeginAnimation(GradientStop.ColorProperty, new ColorAnimation(primary, duration));
+        AuroraStopSecondary.BeginAnimation(GradientStop.ColorProperty, new ColorAnimation(secondary, duration));
+        CollapsedOrbCore.BeginAnimation(GradientStop.ColorProperty, new ColorAnimation(primary, duration));
+        ExpandedOrbCore.BeginAnimation(GradientStop.ColorProperty, new ColorAnimation(primary, duration));
+    }
+
+    private void SetExpanded(bool expand)
+    {
+        if (_isExpanded == expand) return;
+        _isExpanded = expand;
+
+        var targetW = expand ? ExpandedWidth : CollapsedWidth;
+        var targetH = expand ? ExpandedHeight : CollapsedHeight;
+        var area = SystemParameters.WorkArea;
+        var targetLeft = area.Left + (area.Width - targetW) / 2.0;
+
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var duration = TimeSpan.FromMilliseconds(220);
+
+        BeginAnimation(WidthProperty, new DoubleAnimation(targetW, duration) { EasingFunction = ease });
+        BeginAnimation(HeightProperty, new DoubleAnimation(targetH, duration) { EasingFunction = ease });
+        BeginAnimation(LeftProperty, new DoubleAnimation(targetLeft, duration) { EasingFunction = ease });
+
+        NotchShell.CornerRadius = new CornerRadius(expand ? 26 : 22);
+        CollapsedPillView.Visibility = expand ? Visibility.Collapsed : Visibility.Visible;
+        ExpandedCardView.Visibility = expand ? Visibility.Visible : Visibility.Collapsed;
+
+        if (expand)
+        {
+            Activate();
+            CommandInputBox.Focus();
+        }
+    }
+
+    private void SpeakReply(string reply)
+    {
+        if (_ttsMuted || string.IsNullOrWhiteSpace(reply)) return;
+        try
+        {
+            _synthesizer.SpeakAsyncCancelAll();
+            _synthesizer.SpeakAsync(reply);
+        }
+        catch
+        {
+            // Ignore audio device contention errors
+        }
+    }
+
+    private async Task ExecuteUserPromptAsync(string prompt)
+    {
+        if (string.IsNullOrWhiteSpace(prompt)) return;
+
+        VoiceStateSubtitle.Text = "Processing...";
+        var result = await _commandParser.ExecuteAsync(prompt);
+
+        AssistantNameText.Text = _commandParser.AssistantName;
+        CollapsedStatusText.Text = $"{_commandParser.AssistantName} · Armed";
+        AssistantReplyText.Text = result.Reply;
+        VoiceStateSubtitle.Text = result.Succeeded ? "Native Win32 · Ready" : "Action blocked by policy";
+
+        if (result.TriggerLockWorkstation)
+        {
+            StopKeepAwakePatrol();
+            NativeInterop.LockWorkstation();
+        }
+        else if (result.ToggleKeepAwake.HasValue)
+        {
+            SetKeepAwake(result.ToggleKeepAwake.Value);
+        }
+
+        SpeakReply(result.Reply);
+    }
+
+    private void SetKeepAwake(bool enabled)
+    {
+        if (enabled == _keepAwakeActive) return;
+        _keepAwakeActive = enabled;
+        KeepAwakeButton.Content = enabled ? "Coffee: Always" : "Coffee: Off";
+
+        if (enabled)
+        {
+            NativeInterop.ResetEmergencyStop();
+            _patrolCts = new CancellationTokenSource();
+            var ct = _patrolCts.Token;
+            _ = Task.Run(async () =>
+            {
+                var rng = new Random();
+                while (!ct.IsCancellationRequested && !NativeInterop.IsEmergencyStopped())
+                {
+                    int x = rng.Next(260, 920);
+                    int y = rng.Next(200, 620);
+                    NativeInterop.MoveMouseSmooth(x, y, 420);
+                    await Task.Delay(TimeSpan.FromSeconds(18), ct);
+                }
+            }, ct);
+        }
+        else
+        {
+            StopKeepAwakePatrol();
+        }
+    }
+
+    private void StopKeepAwakePatrol()
+    {
+        _keepAwakeActive = false;
+        KeepAwakeButton.Content = "Coffee: Off";
+        NativeInterop.TriggerEmergencyStop();
+        _patrolCts?.Cancel();
+        _patrolCts?.Dispose();
+        _patrolCts = null;
+    }
+
+    // --- UI Event Handlers ---
+    private void Window_MouseEnter(object sender, MouseEventArgs e) => SetExpanded(true);
+
+    private void Window_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (!CommandInputBox.IsKeyboardFocused && !_isListening)
+        {
+            SetExpanded(false);
+        }
+    }
+
+    private void CollapsedPill_Click(object sender, MouseButtonEventArgs e) => SetExpanded(true);
+    private void CollapseNotch_Click(object sender, RoutedEventArgs e) => SetExpanded(false);
+
+    private void Window_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            StopKeepAwakePatrol();
+            SetExpanded(false);
+        }
+    }
+
+    private async void CommandInputBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            var text = CommandInputBox.Text.Trim();
+            CommandInputBox.Clear();
+            await ExecuteUserPromptAsync(text);
+        }
+    }
+
+    private async void SubmitCommand_Click(object sender, RoutedEventArgs e)
+    {
+        var text = CommandInputBox.Text.Trim();
+        CommandInputBox.Clear();
+        await ExecuteUserPromptAsync(text);
+    }
+
+    private void VoiceListen_Click(object sender, RoutedEventArgs e)
+    {
+        if (_speechRecognizer is null)
+        {
+            const string msg = "Windows Speech Recognition microphone input is not available on this device.";
+            AssistantReplyText.Text = msg;
+            SpeakReply(msg);
+            return;
+        }
+
+        if (_isListening)
+        {
+            _speechRecognizer.RecognizeAsyncCancel();
+            _isListening = false;
+            VoiceListenButton.Content = "Mic";
+            VoiceStateSubtitle.Text = "Native Win32 · Ready";
+        }
+        else
+        {
+            _speechRecognizer.RecognizeAsync(RecognizeMode.Multiple);
+            _isListening = true;
+            VoiceListenButton.Content = "Listening";
+            VoiceStateSubtitle.Text = "Listening via System.Speech...";
+            ApplyAuroraTheme(Color.FromRgb(20, 184, 166), Color.FromRgb(56, 189, 248));
+        }
+    }
+
+    private void ThemeDot_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Button btn && int.TryParse(btn.Tag?.ToString(), out int idx))
+        {
+            _autoAurora = false;
+            _auroraIndex = Math.Clamp(idx, 0, AuroraThemes.Length - 1);
+            ApplyAuroraTheme(AuroraThemes[_auroraIndex].Primary, AuroraThemes[_auroraIndex].Secondary);
+            AutoAuroraButton.Content = "Manual";
+        }
+    }
+
+    private void AutoAurora_Click(object sender, RoutedEventArgs e)
+    {
+        _autoAurora = !_autoAurora;
+        AutoAuroraButton.Content = _autoAurora ? "Auto" : "Manual";
+    }
+
+    private void FocusTimerToggle_Click(object sender, RoutedEventArgs e)
+    {
+        _focusRunning = !_focusRunning;
+        FocusTimerToggleBtn.Content = _focusRunning ? "Pause" : "Focus";
+    }
+
+    private void KeepAwake_Click(object sender, RoutedEventArgs e) => SetKeepAwake(!_keepAwakeActive);
+
+    private void MuteTts_Click(object sender, RoutedEventArgs e)
+    {
+        _ttsMuted = !_ttsMuted;
+        MuteTtsButton.Content = _ttsMuted ? "Voice: Muted" : "Voice: On";
+        if (_ttsMuted) _synthesizer.SpeakAsyncCancelAll();
+    }
+
+    private void LockPc_Click(object sender, RoutedEventArgs e)
+    {
+        StopKeepAwakePatrol();
+        AuditLogger.Instance.Log("security", "lock_workstation", "allowed", "Manual LockWorkStation()");
+        NativeInterop.LockWorkstation();
+    }
+}
 `,
   },
   {
-    path: "windows_notch_pro/ai/intent_router.py",
-    group: "AI & Short-Term Memory",
-    language: "python",
+    path: "native/notch_native.h",
+    group: "Native C Win32 Engine (NotchNative.dll)",
+    language: "c",
     summary:
-      "Natural-language intent parser integrating ShortTermMemoryBuffer with sandboxed folders, safe apps, mouse automation, gestures, and lock-screen triggers.",
-    content: `"""Natural-Language Intent Router with 5-Turn Short-Term Memory Integration."""
-from __future__ import annotations
+      "C ABI header for NotchNative.dll exporting Win32 smooth mouse control, emergency stop, LockWorkStation, DWM rounded corners, DPAPI, and restricted Named Pipe helpers.",
+    content: String.raw`#ifndef NOTCH_NATIVE_H
+#define NOTCH_NATIVE_H
 
-from dataclasses import dataclass
-import re
-from typing import Optional
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <stddef.h>
+#include <stdint.h>
 
-from windows_notch_pro.ai.memory_buffer import ShortTermMemoryBuffer
+#ifdef NOTCH_NATIVE_EXPORTS
+#define NOTCH_API __declspec(dllexport)
+#else
+#define NOTCH_API __declspec(dllimport)
+#endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-@dataclass
-class RouteResult:
-    action: str
-    reply: str
-    outcome: str = "executed"
-    resolved_reference: str = ""
+/* Status codes */
+#define NOTCH_OK                0
+#define NOTCH_ERR_INVALID_ARG  -1
+#define NOTCH_ERR_STOPPED      -2
+#define NOTCH_ERR_WIN32        -3
+#define NOTCH_ERR_BUFFER_SMALL -4
 
+/* Mouse buttons */
+#define NOTCH_MOUSE_LEFT        0
+#define NOTCH_MOUSE_RIGHT       1
+#define NOTCH_MOUSE_DOUBLE_LEFT 2
 
-class IntentRouter:
-    """Infers user intent from natural language without requiring UI button rows."""
+/* DWM corner preferences (Windows 11 DWMWA_WINDOW_CORNER_PREFERENCE = 33) */
+#define NOTCH_DWMWCP_DEFAULT    0
+#define NOTCH_DWMWCP_DONOTROUND 1
+#define NOTCH_DWMWCP_ROUND      2
+#define NOTCH_DWMWCP_ROUNDSMALL 3
 
-    def __init__(
-        self,
-        memory: ShortTermMemoryBuffer,
-        folder_manager,
-        app_manager,
-        mouse_controller,
-        air_mouse,
-        platform_adapter,
-        audit_logger,
-    ) -> None:
-        self.memory = memory
-        self.folders = folder_manager
-        self.apps = app_manager
-        self.mouse = mouse_controller
-        self.air_mouse = air_mouse
-        self.platform = platform_adapter
-        self.audit = audit_logger
+/* Smooth ease-in-out mouse movement & clicks with atomic emergency stop */
+NOTCH_API int  notch_mouse_move_smooth(int target_x, int target_y, int duration_ms);
+NOTCH_API int  notch_mouse_click(int button);
+NOTCH_API void notch_mouse_emergency_stop(void);
+NOTCH_API void notch_mouse_reset_stop(void);
+NOTCH_API int  notch_mouse_is_stopped(void);
 
-    def handle_utterance(self, utterance: str) -> RouteResult:
-        text = utterance.strip()
-        if not text:
-            return RouteResult("general_qa", "I didn't catch that. Please try again.", "answered")
+/* Workstation lock & Windows 11 DWM rounded corners */
+NOTCH_API int  notch_lock_workstation(void);
+NOTCH_API int  notch_set_window_rounded_corners(HWND hwnd, int preference);
 
-        # Step 1: Check 5-turn sliding window for relative references first
-        resolved = self.memory.resolve_relative_command(text)
-        if resolved:
-            intent = resolved["intent"]
-            ref = resolved.get("resolved_reference", "")
-            if intent == "memory_recall":
-                reply = resolved["reply"]
-                self.memory.record(text, intent, {}, reply, "answered")
-                self.audit.log("memory", "memory_recall", "allowed", ref)
-                return RouteResult(intent, reply, "answered", ref)
-            return self._dispatch_resolved(text, resolved, ref)
+/* Windows DPAPI (CryptProtectData / CryptUnprotectData) */
+NOTCH_API int  notch_dpapi_protect(
+    const uint8_t* plaintext,
+    uint32_t plaintext_len,
+    uint8_t** out_cipher,
+    uint32_t* out_cipher_len);
 
-        lower = text.lower()
+NOTCH_API int  notch_dpapi_unprotect(
+    const uint8_t* cipher,
+    uint32_t cipher_len,
+    uint8_t** out_plaintext,
+    uint32_t* out_plaintext_len);
 
-        # Step 2: Direct natural-language intent classification
-        m_name = re.search(
-            r"(?:call\s+yourself|your\s+name\s+is|name\s+yourself|i(?:'ll|\s+will)\s+call\s+you)\s+([a-zA-Z0-9 _-]{1,28})",
-            text,
-            re.IGNORECASE,
-        )
-        if m_name:
-            new_name = m_name.group(1).strip()
-            reply = f"Done — you can call me {new_name}."
-            self.memory.record(text, "set_assistant_name", {"target": new_name}, reply, "executed")
-            self.audit.log("system", "assistant_renamed", "allowed", f"name={new_name}")
-            return RouteResult("set_assistant_name", reply, "executed", new_name)
+NOTCH_API void notch_dpapi_free(uint8_t* buffer, uint32_t length);
 
-        if any(k in lower for k in ("remove your name", "be nameless", "clear your name")):
-            reply = "Okay, I'll stay nameless until you choose a name."
-            self.memory.record(text, "set_assistant_name", {"target": ""}, reply, "executed")
-            self.audit.log("system", "assistant_renamed", "allowed", "nameless")
-            return RouteResult("set_assistant_name", reply, "executed", "")
+/* Restricted Named Pipe (\\.\pipe\WindowsNotchUnlock) for Session-0 Unlock */
+NOTCH_API int  notch_pipe_create_restricted_server(const wchar_t* pipe_name, HANDLE* out_handle);
+NOTCH_API int  notch_pipe_send_unlock_request(
+    const wchar_t* pipe_name,
+    const char* payload,
+    uint32_t payload_len,
+    char* response_buf,
+    uint32_t response_cap,
+    uint32_t* out_response_len);
 
-        if any(k in lower for k in ("security vault", "open vault", "enroll voice", "set passphrase")):
-            reply = "Opening the Security Vault."
-            self.memory.record(text, "open_vault", {}, reply, "executed")
-            return RouteResult("open_vault", reply)
+#ifdef __cplusplus
+}
+#endif
 
-        if re.search(r"\block(\s+my)?(\s+pc|\s+computer|\s+screen)?\b", lower):
-            self.platform.lock_workstation()
-            reply = "Workstation locked. Session-0 voice unlock remains active."
-            self.audit.log("security", "lock_workstation", "allowed", "Triggered by voice/text")
-            self.memory.record(text, "lock_pc", {}, reply, "executed")
-            return RouteResult("lock_pc", reply)
-
-        if "emergency stop" in lower or "stop mouse" in lower or "stop patrol" in lower:
-            self.mouse.emergency_stop()
-            self.air_mouse.emergency_stop()
-            reply = "Emergency stop engaged. Mouse automation and Air-Mouse halted."
-            self.memory.record(text, "mouse_stop", {}, reply, "executed")
-            return RouteResult("mouse_stop", reply)
-
-        if "patrol" in lower or "keep awake" in lower:
-            self.mouse.start_keep_awake_patrol()
-            reply = "Autonomous keep-awake mouse patrol started."
-            self.memory.record(text, "mouse_patrol", {}, reply, "executed")
-            return RouteResult("mouse_patrol", reply)
-
-        if "air mouse" in lower or "hand gesture" in lower:
-            enable = not any(w in lower for w in ("stop", "disable", "off"))
-            if enable:
-                self.air_mouse.start()
-                reply = "MediaPipe Air-Mouse hand tracking enabled."
-            else:
-                self.air_mouse.emergency_stop()
-                reply = "MediaPipe Air-Mouse disabled."
-            self.memory.record(text, "gesture_toggle", {"enabled": enable}, reply, "executed")
-            return RouteResult("gesture_toggle", reply)
-
-        # Folder Create: "create folder Invoices in Documents"
-        m_create = re.search(
-            r"create\s+(?:a\s+)?folder\s+(?:named\s+|called\s+)?([^\s]+)(?:\s+(?:in|on)\s+([a-zA-Z]+))?",
-            text,
-            re.IGNORECASE,
-        )
-        if m_create:
-            return self._execute_folder_create(text, m_create.group(1), m_create.group(2) or "Desktop")
-
-        # Folder Rename: "rename folder Old to New in Desktop"
-        m_rename = re.search(
-            r"rename\s+(?:folder\s+)?([^\s]+)\s+to\s+([^\s]+)(?:\s+(?:in|on)\s+([a-zA-Z]+))?",
-            text,
-            re.IGNORECASE,
-        )
-        if m_rename:
-            return self._execute_folder_rename(
-                text, m_rename.group(1), m_rename.group(2), m_rename.group(3) or "Desktop"
-            )
-
-        # Folder Delete: "delete folder Drafts in Downloads"
-        m_del = re.search(
-            r"(?:delete|remove)\s+(?:folder\s+)?([^\s]+)(?:\s+(?:in|from|on)\s+([a-zA-Z]+))?",
-            text,
-            re.IGNORECASE,
-        )
-        if m_del:
-            return self._execute_folder_delete(text, m_del.group(1), m_del.group(2) or "Desktop")
-
-        # In-Notch Song Playback Controls (play / search / stop without opening another app)
-        if re.search(r"\b(stop|halt|turn off)\s+(the\s+)?(song|music|audio|track)\b", lower):
-            reply = "Stopped song playback inside the Notch."
-            self.memory.record(text, "song_stop", {}, reply, "executed")
-            self.audit.log("system", "notch_song_stop", "allowed", "Stopped in-Notch audio")
-            return RouteResult("song_stop", reply)
-
-        m_song = re.match(r"^(?:play|search\s+song|find\s+song)\s+(.+)$", text, re.IGNORECASE)
-        if m_song:
-            query = m_song.group(1).strip()
-            intent_name = "song_search" if lower.startswith(("search", "find")) else "song_play"
-            reply = (
-                f"Searching songs for '{query}' inside the Notch."
-                if intent_name == "song_search"
-                else f"Playing '{query}' directly through the Notch."
-            )
-            self.memory.record(text, intent_name, {"target": query}, reply, "executed")
-            self.audit.log("system", intent_name, "allowed", f"query={query}")
-            return RouteResult(intent_name, reply)
-
-        # List apps
-        if "list apps" in lower or "running apps" in lower:
-            running = self.apps.list_running_apps()
-            reply = f"Running apps: {', '.join(running[:8]) or 'none'}."
-            self.memory.record(text, "app_list", {}, reply, "executed")
-            return RouteResult("app_list", reply)
-
-        # Open app
-        m_open = re.match(r"^(?:open|launch|start)\s+(.+)$", text, re.IGNORECASE)
-        if m_open:
-            return self._execute_app_open(text, m_open.group(1).strip())
-
-        # Close app
-        m_close = re.match(r"^(?:close|quit|terminate|kill)\s+(.+)$", text, re.IGNORECASE)
-        if m_close:
-            return self._execute_app_close(text, m_close.group(1).strip())
-
-        reply = "I understood your question. Connect an AI provider key to answer open-ended queries."
-        self.memory.record(text, "general_qa", {}, reply, "answered")
-        return RouteResult("general_qa", reply, "answered")
-
-    def _dispatch_resolved(self, text: str, resolved: dict, ref: str) -> RouteResult:
-        intent = resolved["intent"]
-        target = str(resolved.get("target", ""))
-        root = str(resolved.get("root", "Desktop"))
-        if intent == "folder_create":
-            return self._execute_folder_create(text, target, root, ref)
-        if intent == "folder_rename":
-            return self._execute_folder_rename(text, target, str(resolved.get("new_name", "")), root, ref)
-        if intent == "folder_delete":
-            return self._execute_folder_delete(text, target, root, ref)
-        if intent == "app_open":
-            return self._execute_app_open(text, target, ref)
-        if intent == "app_close":
-            return self._execute_app_close(text, target, ref)
-        return RouteResult("general_qa", "Could not repeat that action.", "blocked", ref)
-
-    def _execute_folder_create(self, text: str, name: str, root: str, ref: str = "") -> RouteResult:
-        ok, msg = self.folders.create_folder(name, root)
-        outcome = "executed" if ok else "blocked"
-        self.memory.record(text, "folder_create", {"target": name, "root": root}, msg, outcome)
-        return RouteResult("folder_create", msg, outcome, ref)
-
-    def _execute_folder_rename(
-        self, text: str, old_name: str, new_name: str, root: str, ref: str = ""
-    ) -> RouteResult:
-        ok, msg = self.folders.rename_folder(old_name, new_name, root)
-        outcome = "executed" if ok else "blocked"
-        self.memory.record(
-            text, "folder_rename", {"target": old_name, "new_name": new_name, "root": root}, msg, outcome
-        )
-        return RouteResult("folder_rename", msg, outcome, ref)
-
-    def _execute_folder_delete(self, text: str, name: str, root: str, ref: str = "") -> RouteResult:
-        ok, msg = self.folders.delete_folder(name, root)
-        outcome = "executed" if ok else "blocked"
-        self.memory.record(text, "folder_delete", {"target": name, "root": root}, msg, outcome)
-        return RouteResult("folder_delete", msg, outcome, ref)
-
-    def _execute_app_open(self, text: str, app_name: str, ref: str = "") -> RouteResult:
-        ok, msg = self.apps.open_app(app_name)
-        outcome = "executed" if ok else "blocked"
-        self.memory.record(text, "app_open", {"target": app_name}, msg, outcome)
-        return RouteResult("app_open", msg, outcome, ref)
-
-    def _execute_app_close(self, text: str, app_name: str, ref: str = "") -> RouteResult:
-        ok, msg = self.apps.close_app(app_name)
-        outcome = "executed" if ok else "blocked"
-        self.memory.record(text, "app_close", {"target": app_name}, msg, outcome)
-        return RouteResult("app_close", msg, outcome, ref)
+#endif /* NOTCH_NATIVE_H */
 `,
   },
   {
-    path: "windows_notch_pro/voice/listener.py",
-    group: "Voice & Talk-Back",
-    language: "python",
+    path: "native/notch_native.c",
+    group: "Native C Win32 Engine (NotchNative.dll)",
+    language: "c",
     summary:
-      "Non-blocking background microphone listener with wake-word 'Notch' trigger and raw PCM buffer passthrough for speaker voiceprint verification.",
-    content: `"""Non-blocking Wake-Word Microphone Listener ('Notch')."""
-from __future__ import annotations
+      "Native C11 Win32 implementation of SendInput smooth mouse control, DWMWA_WINDOW_CORNER_PREFERENCE, CryptProtectData DPAPI sealing, and SDDL-protected Named Pipes.",
+    content: String.raw`#define NOTCH_NATIVE_EXPORTS
+#include "notch_native.h"
 
-import threading
-from typing import Callable, Optional
+#include <wincrypt.h>
+#include <sddl.h>
+#include <math.h>
+#include <string.h>
 
+#pragma comment(lib, "user32.lib")
+#pragma comment(lib, "crypt32.lib")
+#pragma comment(lib, "advapi32.lib")
 
-class WakeWordVoiceListener:
-    """Listens continuously on a daemon thread for the 'Notch' wake word."""
+/* Atomic emergency stop flag polled on every mouse interpolation frame */
+static volatile LONG g_emergency_stop = 0;
 
-    def __init__(
-        self,
-        wake_word: str = "notch",
-        on_command: Optional[Callable[[str], None]] = None,
-        on_state_change: Optional[Callable[[str], None]] = None,
-    ) -> None:
-        self.wake_word = wake_word.lower()
-        self.on_command = on_command
-        self.on_state_change = on_state_change
-        self._stop_event = threading.Event()
-        self._manual_event = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+static double ease_in_out_cubic(double t)
+{
+    if (t < 0.5)
+    {
+        return 4.0 * t * t * t;
+    }
+    double f = -2.0 * t + 2.0;
+    return 1.0 - (f * f * f) / 2.0;
+}
 
-    def start(self) -> None:
-        if self._thread and self._thread.is_alive():
-            return
-        self._stop_event.clear()
-        self._thread = threading.Thread(target=self._run_loop, name="NotchVoiceListener", daemon=True)
-        self._thread.start()
+NOTCH_API void notch_mouse_emergency_stop(void)
+{
+    InterlockedExchange(&g_emergency_stop, 1);
+}
 
-    def stop(self) -> None:
-        self._stop_event.set()
-        self._manual_event.set()
+NOTCH_API void notch_mouse_reset_stop(void)
+{
+    InterlockedExchange(&g_emergency_stop, 0);
+}
 
-    def trigger_manual_capture(self) -> None:
-        self._manual_event.set()
+NOTCH_API int notch_mouse_is_stopped(void)
+{
+    return (int)InterlockedCompareExchange(&g_emergency_stop, 0, 0);
+}
 
-    def _run_loop(self) -> None:
-        try:
-            import speech_recognition as sr  # type: ignore
-        except ImportError:
-            return
+NOTCH_API int notch_mouse_move_smooth(int target_x, int target_y, int duration_ms)
+{
+    if (notch_mouse_is_stopped())
+    {
+        return NOTCH_ERR_STOPPED;
+    }
 
-        recognizer = sr.Recognizer()
-        recognizer.dynamic_energy_threshold = True
+    POINT start = {0, 0};
+    if (!GetCursorPos(&start))
+    {
+        return NOTCH_ERR_WIN32;
+    }
 
-        try:
-            with sr.Microphone() as source:
-                recognizer.adjust_for_ambient_noise(source, duration=0.8)
-                while not self._stop_event.is_set():
-                    try:
-                        audio = recognizer.listen(source, timeout=2.0, phrase_time_limit=6.0)
-                        transcript = recognizer.recognize_google(audio).strip()
-                    except Exception:
-                        continue
+    if (duration_ms <= 0)
+    {
+        duration_ms = 240;
+    }
 
-                    lower = transcript.lower()
-                    manual_armed = self._manual_event.is_set()
-                    if manual_armed:
-                        self._manual_event.clear()
-                        command = transcript
-                    elif lower.startswith(self.wake_word):
-                        command = transcript[len(self.wake_word) :].lstrip(" ,:.")
-                    else:
-                        continue
+    const int step_ms = 8;
+    int steps = duration_ms / step_ms;
+    if (steps < 1) steps = 1;
+    if (steps > 400) steps = 400;
 
-                    if command and self.on_command:
-                        if self.on_state_change:
-                            self.on_state_change("thinking")
-                        self.on_command(command)
-        except Exception:
-            if self.on_state_change:
-                self.on_state_change("idle")
+    for (int i = 1; i <= steps; ++i)
+    {
+        if (notch_mouse_is_stopped())
+        {
+            return NOTCH_ERR_STOPPED;
+        }
+
+        double progress = (double)i / (double)steps;
+        double eased = ease_in_out_cubic(progress);
+
+        int next_x = start.x + (int)llround((double)(target_x - start.x) * eased);
+        int next_y = start.y + (int)llround((double)(target_y - start.y) * eased);
+
+        SetCursorPos(next_x, next_y);
+        Sleep((DWORD)step_ms);
+    }
+
+    return NOTCH_OK;
+}
+
+static int send_single_click(DWORD down_flag, DWORD up_flag)
+{
+    INPUT inputs[2];
+    ZeroMemory(inputs, sizeof(inputs));
+
+    inputs[0].type = INPUT_MOUSE;
+    inputs[0].mi.dwFlags = down_flag;
+
+    inputs[1].type = INPUT_MOUSE;
+    inputs[1].mi.dwFlags = up_flag;
+
+    UINT sent = SendInput(2, inputs, sizeof(INPUT));
+    return (sent == 2) ? NOTCH_OK : NOTCH_ERR_WIN32;
+}
+
+NOTCH_API int notch_mouse_click(int button)
+{
+    if (notch_mouse_is_stopped())
+    {
+        return NOTCH_ERR_STOPPED;
+    }
+
+    switch (button)
+    {
+        case NOTCH_MOUSE_LEFT:
+            return send_single_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP);
+
+        case NOTCH_MOUSE_RIGHT:
+            return send_single_click(MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP);
+
+        case NOTCH_MOUSE_DOUBLE_LEFT:
+        {
+            int rc = send_single_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP);
+            if (rc != NOTCH_OK) return rc;
+            Sleep(45);
+            if (notch_mouse_is_stopped()) return NOTCH_ERR_STOPPED;
+            return send_single_click(MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP);
+        }
+
+        default:
+            return NOTCH_ERR_INVALID_ARG;
+    }
+}
+
+NOTCH_API int notch_lock_workstation(void)
+{
+    return LockWorkStation() ? NOTCH_OK : NOTCH_ERR_WIN32;
+}
+
+typedef HRESULT (WINAPI *PFN_DwmSetWindowAttribute)(HWND, DWORD, LPCVOID, DWORD);
+
+NOTCH_API int notch_set_window_rounded_corners(HWND hwnd, int preference)
+{
+    if (!hwnd)
+    {
+        return NOTCH_ERR_INVALID_ARG;
+    }
+
+    /* Dynamically load dwmapi.dll so Windows 10 gracefully skips DWMWA_WINDOW_CORNER_PREFERENCE */
+    HMODULE dwm = LoadLibraryW(L"dwmapi.dll");
+    if (!dwm)
+    {
+        return NOTCH_ERR_WIN32;
+    }
+
+    PFN_DwmSetWindowAttribute pDwmSetAttr =
+        (PFN_DwmSetWindowAttribute)GetProcAddress(dwm, "DwmSetWindowAttribute");
+
+    int status = NOTCH_ERR_WIN32;
+    if (pDwmSetAttr)
+    {
+        const DWORD DWMWA_WINDOW_CORNER_PREFERENCE_ID = 33;
+        DWORD pref = (DWORD)preference;
+        HRESULT hr = pDwmSetAttr(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE_ID, &pref, sizeof(pref));
+        status = SUCCEEDED(hr) ? NOTCH_OK : NOTCH_ERR_WIN32;
+    }
+
+    FreeLibrary(dwm);
+    return status;
+}
+
+NOTCH_API int notch_dpapi_protect(
+    const uint8_t* plaintext,
+    uint32_t plaintext_len,
+    uint8_t** out_cipher,
+    uint32_t* out_cipher_len)
+{
+    if (!plaintext || plaintext_len == 0 || !out_cipher || !out_cipher_len)
+    {
+        return NOTCH_ERR_INVALID_ARG;
+    }
+
+    DATA_BLOB input_blob;
+    input_blob.pbData = (BYTE*)plaintext;
+    input_blob.cbData = plaintext_len;
+
+    DATA_BLOB output_blob = {0, NULL};
+    BOOL ok = CryptProtectData(
+        &input_blob,
+        L"WindowsNotchPro_Vault",
+        NULL,
+        NULL,
+        NULL,
+        CRYPTPROTECT_UI_FORBIDDEN,
+        &output_blob);
+
+    if (!ok)
+    {
+        return NOTCH_ERR_WIN32;
+    }
+
+    *out_cipher = (uint8_t*)output_blob.pbData;
+    *out_cipher_len = (uint32_t)output_blob.cbData;
+    return NOTCH_OK;
+}
+
+NOTCH_API int notch_dpapi_unprotect(
+    const uint8_t* cipher,
+    uint32_t cipher_len,
+    uint8_t** out_plaintext,
+    uint32_t* out_plaintext_len)
+{
+    if (!cipher || cipher_len == 0 || !out_plaintext || !out_plaintext_len)
+    {
+        return NOTCH_ERR_INVALID_ARG;
+    }
+
+    DATA_BLOB input_blob;
+    input_blob.pbData = (BYTE*)cipher;
+    input_blob.cbData = cipher_len;
+
+    DATA_BLOB output_blob = {0, NULL};
+    BOOL ok = CryptUnprotectData(
+        &input_blob,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        CRYPTPROTECT_UI_FORBIDDEN,
+        &output_blob);
+
+    if (!ok)
+    {
+        return NOTCH_ERR_WIN32;
+    }
+
+    *out_plaintext = (uint8_t*)output_blob.pbData;
+    *out_plaintext_len = (uint32_t)output_blob.cbData;
+    return NOTCH_OK;
+}
+
+NOTCH_API void notch_dpapi_free(uint8_t* buffer, uint32_t length)
+{
+    if (buffer)
+    {
+        if (length > 0)
+        {
+            SecureZeroMemory(buffer, length);
+        }
+        LocalFree(buffer);
+    }
+}
+
+NOTCH_API int notch_pipe_create_restricted_server(const wchar_t* pipe_name, HANDLE* out_handle)
+{
+    if (!pipe_name || !out_handle)
+    {
+        return NOTCH_ERR_INVALID_ARG;
+    }
+
+    /* Strict DACL: LocalSystem (SY), Administrators (BA), Interactive User (IU) only */
+    const wchar_t* sddl = L"D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)";
+    PSECURITY_DESCRIPTOR sd = NULL;
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl,
+            SDDL_REVISION_1,
+            &sd,
+            NULL))
+    {
+        return NOTCH_ERR_WIN32;
+    }
+
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+    sa.lpSecurityDescriptor = sd;
+    sa.bInheritHandle = FALSE;
+
+    HANDLE pipe = CreateNamedPipeW(
+        pipe_name,
+        PIPE_ACCESS_DUPLEX,
+        PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
+        1,
+        4096,
+        4096,
+        2000,
+        &sa);
+
+    LocalFree(sd);
+
+    if (pipe == INVALID_HANDLE_VALUE)
+    {
+        return NOTCH_ERR_WIN32;
+    }
+
+    *out_handle = pipe;
+    return NOTCH_OK;
+}
+
+NOTCH_API int notch_pipe_send_unlock_request(
+    const wchar_t* pipe_name,
+    const char* payload,
+    uint32_t payload_len,
+    char* response_buf,
+    uint32_t response_cap,
+    uint32_t* out_response_len)
+{
+    if (!pipe_name || !payload || payload_len == 0 || !response_buf || response_cap == 0 || !out_response_len)
+    {
+        return NOTCH_ERR_INVALID_ARG;
+    }
+
+    if (!WaitNamedPipeW(pipe_name, 1500))
+    {
+        return NOTCH_ERR_WIN32;
+    }
+
+    HANDLE pipe = CreateFileW(
+        pipe_name,
+        GENERIC_READ | GENERIC_WRITE,
+        0,
+        NULL,
+        OPEN_EXISTING,
+        0,
+        NULL);
+
+    if (pipe == INVALID_HANDLE_VALUE)
+    {
+        return NOTCH_ERR_WIN32;
+    }
+
+    DWORD mode = PIPE_READMODE_MESSAGE;
+    SetNamedPipeHandleState(pipe, &mode, NULL, NULL);
+
+    DWORD written = 0;
+    BOOL ok = WriteFile(pipe, payload, payload_len, &written, NULL);
+    if (!ok || written != payload_len)
+    {
+        CloseHandle(pipe);
+        return NOTCH_ERR_WIN32;
+    }
+
+    DWORD bytes_read = 0;
+    ok = ReadFile(pipe, response_buf, response_cap - 1, &bytes_read, NULL);
+    CloseHandle(pipe);
+
+    if (!ok)
+    {
+        return NOTCH_ERR_WIN32;
+    }
+
+    response_buf[bytes_read] = '\0';
+    *out_response_len = (uint32_t)bytes_read;
+    return NOTCH_OK;
+}
 `,
   },
   {
-    path: "windows_notch_pro/voice/tts_engine.py",
-    group: "Voice & Talk-Back",
-    language: "python",
+    path: "native/credential_provider_skeleton.cpp",
+    group: "Native C Win32 Engine (NotchNative.dll)",
+    language: "cpp",
     summary:
-      "Queue-backed non-blocking background TTS worker invoking Windows native SAPI.SpVoice / System.Speech without stalling the UI thread.",
-    content: `"""Non-blocking Background TTS Talk-Back Engine (Windows SAPI.SpVoice / System.Speech)."""
-from __future__ import annotations
+      "Session-0 Winlogon ICredentialProvider COM DLL skeleton consuming \\\\.\\pipe\\WindowsNotchUnlock and zeroing plaintext credentials via SecureZeroMemory.",
+    content: String.raw`// WindowsNotchPro Session-0 ICredentialProvider COM Skeleton (x64)
+// Register CLSID under:
+//   HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{YOUR-GUID}
+//
+// Security Architecture:
+//   1. Never stores plaintext passwords on disk.
+//   2. Listens on restricted SDDL Named Pipe \\.\pipe\WindowsNotchUnlock created via notch_native.h.
+//   3. Receives verified 2FA unlock assertion from LocalSystem companion service,
+//      unseals DPAPI envelope, serializes KERB_INTERACTIVE_UNLOCK_LOGON, and wipes memory.
 
-import queue
-import threading
-from typing import Callable, Optional, Tuple
+#include <windows.h>
+#include <credentialprovider.h>
+#include <ntsecapi.h>
+#include <shlwapi.h>
+#include <strsafe.h>
+#include "notch_native.h"
 
+static const wchar_t* kUnlockPipeName = L"\\\\.\\pipe\\WindowsNotchUnlock";
 
-class NativeTTSEngine:
-    """Speaks confirmations aloud on a dedicated daemon worker thread."""
+class CNotchVoiceCredential final : public ICredentialProviderCredential
+{
+public:
+    CNotchVoiceCredential() : _refCount(1) {}
 
-    def __init__(self, platform_adapter) -> None:
-        self._platform = platform_adapter
-        self._queue: "queue.Queue[Optional[Tuple[str, Optional[Callable[[], None]]]]]" = queue.Queue()
-        self._worker = threading.Thread(target=self._loop, name="NotchTTSWorker", daemon=True)
-        self._worker.start()
+    // IUnknown
+    IFACEMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&_refCount); }
+    IFACEMETHODIMP_(ULONG) Release() override
+    {
+        LONG c = InterlockedDecrement(&_refCount);
+        if (c == 0) delete this;
+        return c;
+    }
 
-    def speak_async(self, text: str, on_done: Optional[Callable[[], None]] = None) -> None:
-        if not text.strip():
-            if on_done:
-                on_done()
-            return
-        self._queue.put((text.strip(), on_done))
+    IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv) override
+    {
+        static const QITAB qit[] = {
+            QITABENT(CNotchVoiceCredential, ICredentialProviderCredential),
+            {0}
+        };
+        return QISearch(this, qit, riid, ppv);
+    }
 
-    def shutdown(self) -> None:
-        self._queue.put(None)
+    // Minimal ICredentialProviderCredential contract
+    IFACEMETHODIMP Advise(ICredentialProviderCredentialEvents*) override { return S_OK; }
+    IFACEMETHODIMP UnAdvise() override { return S_OK; }
+    IFACEMETHODIMP SetSelected(BOOL* pbAutoLogon) override { *pbAutoLogon = FALSE; return S_OK; }
+    IFACEMETHODIMP SetDeselected() override { return S_OK; }
+    IFACEMETHODIMP GetFieldState(DWORD, CREDENTIAL_PROVIDER_FIELD_STATE* pfs, CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE* pfis) override
+    {
+        *pfs = CPFS_DISPLAY_IN_BOTH;
+        *pfis = CPFIS_NONE;
+        return S_OK;
+    }
+    IFACEMETHODIMP GetStringValue(DWORD, PWSTR* ppwsz) override
+    {
+        return SHStrDupW(L"NOVA 2FA Voice Unlock", ppwsz);
+    }
+    IFACEMETHODIMP GetBitmapValue(DWORD, HBITMAP* phbmp) override { *phbmp = nullptr; return E_NOTIMPL; }
+    IFACEMETHODIMP GetCheckboxValue(DWORD, BOOL*, PWSTR*) override { return E_NOTIMPL; }
+    IFACEMETHODIMP GetSubmitButtonValue(DWORD, DWORD* pdwAdjacentTo) override { *pdwAdjacentTo = 0; return S_OK; }
+    IFACEMETHODIMP GetComboBoxValueCount(DWORD, DWORD*, DWORD*) override { return E_NOTIMPL; }
+    IFACEMETHODIMP GetComboBoxValueAt(DWORD, DWORD, PWSTR*) override { return E_NOTIMPL; }
+    IFACEMETHODIMP SetStringValue(DWORD, PCWSTR) override { return S_OK; }
+    IFACEMETHODIMP SetCheckboxValue(DWORD, BOOL) override { return E_NOTIMPL; }
+    IFACEMETHODIMP SetComboBoxSelectedValue(DWORD, DWORD) override { return E_NOTIMPL; }
+    IFACEMETHODIMP CommandLinkClicked(DWORD) override { return E_NOTIMPL; }
+    IFACEMETHODIMP ReportResult(NTSTATUS, NTSTATUS, PWSTR*, CREDENTIAL_PROVIDER_STATUS_ICON*) override { return S_OK; }
 
-    def _loop(self) -> None:
-        while True:
-            item = self._queue.get()
-            if item is None:
-                break
-            text, on_done = item
-            try:
-                self._platform.speak_blocking(text)
-            finally:
-                if on_done:
-                    on_done()
+    IFACEMETHODIMP GetSerialization(
+        CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE* pcpgsr,
+        CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION* pcpcs,
+        PWSTR* ppwszOptionalStatusText,
+        CREDENTIAL_PROVIDER_STATUS_ICON* pcpsiOptionalStatusIcon) override
+    {
+        *pcpgsr = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
+        *ppwszOptionalStatusText = nullptr;
+        *pcpsiOptionalStatusIcon = CPSI_NONE;
+
+        // Query Session-0 service via restricted SDDL Named Pipe
+        const char* probe = "{\"cmd\":\"fetch_verified_unlock_blob\"}";
+        char resp[2048] = {0};
+        uint32_t respLen = 0;
+
+        int rc = notch_pipe_send_unlock_request(
+            kUnlockPipeName,
+            probe,
+            (uint32_t)lstrlenA(probe),
+            resp,
+            sizeof(resp),
+            &respLen);
+
+        if (rc != NOTCH_OK || respLen == 0)
+        {
+            SHStrDupW(L"Waiting for 2FA voice & passphrase verification...", ppwszOptionalStatusText);
+            return S_OK;
+        }
+
+        // Production builds pack KERB_INTERACTIVE_UNLOCK_LOGON here via CredPackAuthenticationBufferW
+        // using the DPAPI-unsealed domain/user/password, then immediately scrub memory:
+        SecureZeroMemory(resp, sizeof(resp));
+        (void)pcpcs;
+        *pcpgsr = CPGSR_NO_CREDENTIAL_FINISHED;
+        return S_OK;
+    }
+
+private:
+    LONG _refCount;
+};
 `,
   },
 ];

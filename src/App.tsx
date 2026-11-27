@@ -3,12 +3,11 @@ import {
   Code2,
   Download,
   FileText,
+  Folder,
   History,
-  Lock,
-  Monitor,
-  Shield,
   Volume2,
   VolumeX,
+  X,
 } from "lucide-react";
 import type {
   AuditCategory,
@@ -46,7 +45,7 @@ import {
 } from "./utils/memoryBuffer";
 import { isProtectedSystemProcess, validateSandboxedFolder } from "./utils/sandboxEngine";
 
-type WorkspaceTab = "desktop" | "memory" | "audit" | "source";
+type OverlayPanel = "memory" | "audit" | "source" | null;
 
 const INITIAL_FOLDERS: VirtualFolder[] = [
   { id: "f-1", name: "Design Specs", root: "Desktop", createdAt: "09:14", itemCount: 4 },
@@ -75,12 +74,12 @@ const INITIAL_APPS: DesktopApp[] = [
     id: "vscode",
     name: "VS Code",
     processName: "Code.exe",
-    isOpen: true,
-    windowTitle: "Visual Studio Code — windows_notch_pro",
+    isOpen: false,
+    windowTitle: "Visual Studio Code — WindowsNotchPro",
     previewLines: [
-      "def enable_per_monitor_v2_dpi() -> None:",
-      "    ctypes.windll.user32.SetProcessDpiAwarenessContext(-4)",
-      "# ShortTermMemoryBuffer(maxlen=20) active",
+      "[DllImport(\"NotchNative.dll\", CallingConvention = CallingConvention.Cdecl)]",
+      "private static extern int notch_set_window_rounded_corners(IntPtr hwnd, int pref);",
+      "// .NET 8 WPF · Per-Monitor V2 DPI · CompanionServer active",
     ],
     x: 40,
     y: 40,
@@ -95,7 +94,7 @@ const INITIAL_APPS: DesktopApp[] = [
     previewLines: [
       "Q4 Launch Checklist",
       "- Verify PBKDF2 200k vault derivation",
-      "- Package standalone WindowsNotchPro.exe",
+      "- Run build.bat for standalone WindowsNotchPro.exe",
     ],
     x: 60,
     y: 60,
@@ -119,8 +118,8 @@ const INITIAL_APPS: DesktopApp[] = [
     isOpen: false,
     windowTitle: "Windows Terminal — PowerShell 7",
     previewLines: [
-      "PS C:\\WindowsNotchPro> python -m unittest discover -s tests -v",
-      "Ran 5 tests in 0.142s — OK",
+      "PS C:\\WindowsNotchPro> .\\build.bat",
+      "[OK] dist\\WindowsNotchPro.exe + dist\\NotchNative.dll ready",
     ],
     x: 100,
     y: 100,
@@ -143,7 +142,8 @@ const INITIAL_APPS: DesktopApp[] = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>("desktop");
+  const [activeOverlay, setActiveOverlay] = useState<OverlayPanel>(null);
+  const [explorerOpen, setExplorerOpen] = useState(false);
   const [vaultModalOpen, setVaultModalOpen] = useState(false);
 
   // Assistant Identity (defaults to NOVA; user can rename or clear anytime) & Bento UI State
@@ -728,6 +728,7 @@ export default function App() {
             itemCount: 0,
           };
           setFolders((prev) => [created, ...prev]);
+          setExplorerOpen(true);
           const reply =
             parsed.spokenReply ||
             `Created folder ${check.sanitizedName} in ${check.normalizedRoot}.`;
@@ -780,6 +781,7 @@ export default function App() {
               f.id === targetFolder.id ? { ...f, name: newCheck.sanitizedName } : f
             )
           );
+          setExplorerOpen(true);
           const reply =
             parsed.spokenReply ||
             `Renamed ${targetFolder.name} to ${newCheck.sanitizedName} in ${targetFolder.root}.`;
@@ -836,6 +838,7 @@ export default function App() {
             },
             ...prev,
           ]);
+          setExplorerOpen(true);
           const reply =
             parsed.spokenReply || `Moved ${match.name} to the Recycle Bin via send2trash.`;
           setLastReply(reply);
@@ -1292,7 +1295,7 @@ export default function App() {
       const clean = text.trim();
       if (!clean) return;
       lastPromptRef.current = clean;
-      setActiveTab("desktop");
+      setActiveOverlay(null);
       setActiveNotchView("ai");
       setNotchExpanded(true);
       setInputValue("");
@@ -1375,7 +1378,7 @@ export default function App() {
       return;
     }
 
-    setActiveTab("desktop");
+    setActiveOverlay(null);
     setActiveNotchView("ai");
     setNotchExpanded(true);
     setLastError(null);
@@ -1446,311 +1449,233 @@ export default function App() {
     [memoryEntries, totalMemoryRecorded]
   );
 
-  const navItems: Array<{ id: WorkspaceTab; label: string; icon: React.ReactNode; meta?: string }> = [
-    {
-      id: "desktop",
-      label: "Desktop Simulator",
-      icon: <Monitor className="h-4 w-4" />,
-    },
-    {
-      id: "memory",
-      label: "Memory Buffer",
-      icon: <History className="h-4 w-4" />,
-      meta: `${memoryEntries.length}/${MEMORY_WINDOW_SIZE}`,
-    },
-    {
-      id: "audit",
-      label: "Audit Log",
-      icon: <FileText className="h-4 w-4" />,
-      meta: String(auditEvents.length),
-    },
-    {
-      id: "source",
-      label: "Windows Source",
-      icon: <Code2 className="h-4 w-4" />,
-      meta: "21",
-    },
-  ];
-
-  const breadcrumbTitle = (() => {
-    switch (activeTab) {
-      case "desktop":
-        return "Desktop Simulator";
+  const overlayTitle = (() => {
+    switch (activeOverlay) {
       case "memory":
         return "Short-Term Memory Buffer";
       case "audit":
         return "Audit Log (audit.jsonl)";
       case "source":
-        return "Windows 10 & 11 Source Package";
+        return "Windows 10 & 11 Native .exe Source Package";
+      default:
+        return "";
     }
   })();
 
   return (
-    <div className="flex min-h-screen bg-[#0B0E14] text-slate-100">
-      {/* Left Workspace Sidebar (248px) */}
-      <aside className="hidden w-[248px] shrink-0 flex-col justify-between border-r border-slate-800/90 bg-[#0D1119] p-4 lg:flex">
-        <div>
-          <div className="px-2 pb-5 pt-1">
-            <span className="font-display text-base font-bold tracking-tight text-white">
-              WindowsNotch Pro
+    <div className="relative h-screen w-screen overflow-hidden bg-[#06080E] text-slate-100">
+      {/* Full-Viewport Clean Canvas — ONLY the Top-Center Floating NOVA Bento Notch is visible by default */}
+      <DesktopSimulator
+        assistantName={assistantName}
+        focusedAppId={focusedAppId}
+        onFocusApp={(id) => {
+          setFocusedAppId(id);
+          if (id === "chrome" || id === "edge") {
+            setNotchExpanded(false);
+          }
+        }}
+        notchExpanded={notchExpanded}
+        activeNotchView={activeNotchView}
+        onChangeNotchView={setActiveNotchView}
+        onToggleNotch={(next) =>
+          setNotchExpanded((prev) => (typeof next === "boolean" ? next : !prev))
+        }
+        orbState={orbState}
+        liveStatus={liveStatus}
+        liveInputTranscript={liveInputTranscript}
+        liveOutputTranscript={liveOutputTranscript}
+        inputValue={inputValue}
+        onInputChange={setInputValue}
+        onSubmitCommand={handleSubmitCommand}
+        onToggleLiveVoice={handleToggleLiveVoice}
+        lastReply={lastReply}
+        lastResolvedRef={lastResolvedRef}
+        lastSources={lastSources}
+        lastError={lastError}
+        retryableError={retryableError}
+        onRetryLastCommand={handleRetryLastCommand}
+        memoryCount={memoryEntries.length}
+        currentTrack={currentTrack}
+        isTrackPlaying={isTrackPlaying}
+        trackProgress={trackProgress}
+        songResults={songResults}
+        onPlayTrack={(track) => {
+          playTrackInNotch(track);
+          setLastReply(`Playing ${track.title} by ${track.artist} in NOVA Media.`);
+          recordToMemory(`Play ${track.title}`, "song_play", `Playing ${track.title}`, "executed", {
+            target: `${track.title} — ${track.artist}`,
+          });
+        }}
+        onTogglePlayPause={handleTogglePlayPause}
+        onStopTrack={handleStopTrack}
+        onNextTrack={handleNextTrack}
+        onPrevTrack={handlePrevTrack}
+        onSearchSongsDirect={handleSearchSongsDirect}
+        isLocked={isLocked}
+        onLockWorkstation={() => {
+          setIsPatrolling(false);
+          setAirMouseEnabled(false);
+          setIsLocked(true);
+          setOrbState("locked");
+          setActiveNotchView("bento");
+          appendAudit("security", "lock_workstation", "allowed", "LockWorkStation() invoked");
+        }}
+        onAttempt2FAUnlock={handleAttempt2FAUnlock}
+        vault={vault}
+        folders={folders}
+        recycledFolders={recycledFolders}
+        onRestoreRecycled={(id) => {
+          const target = recycledFolders.find((r) => r.id === id);
+          if (!target) return;
+          setRecycledFolders((prev) => prev.filter((r) => r.id !== id));
+          setFolders((prev) => [
+            {
+              id: target.id,
+              name: target.name,
+              root: target.originalRoot,
+              createdAt: "Restored",
+              itemCount: 0,
+            },
+            ...prev,
+          ]);
+          appendAudit(
+            "folder",
+            "folder_restore",
+            "allowed",
+            `Restored ${target.originalRoot}\\${target.name}`
+          );
+        }}
+        explorerOpen={explorerOpen}
+        onCloseExplorer={() => setExplorerOpen(false)}
+        apps={apps}
+        onOpenAppWindow={handleOpenAppWindow}
+        onCloseAppWindow={(appId) => {
+          const app = apps.find((a) => a.id === appId);
+          setApps((prev) => prev.map((a) => (a.id === appId ? { ...a, isOpen: false } : a)));
+          setFocusedAppId((prev) => (prev === appId ? null : prev));
+          if (app) {
+            appendAudit("app", "app_close", "allowed", `Closed ${app.processName} via window`);
+          }
+        }}
+        onAttemptProtectedProcess={handleAttemptProtectedProcess}
+        onNavigateChrome={handleNavigateChrome}
+        cursorPos={cursorPos}
+        clickRipple={clickRipple}
+        isPatrolling={isPatrolling}
+        onToggleKeepAwake={handleToggleKeepAwake}
+        airMouseEnabled={airMouseEnabled}
+        onToggleAirMouse={handleToggleAirMouse}
+        onEmergencyStop={handleEmergencyStop}
+        onTriggerGesture={handleTriggerGesture}
+        onOpenVault={() => setVaultModalOpen(true)}
+      />
+
+      {/* Quiet, Unobtrusive Corner Dock (Fades to low opacity until hovered) */}
+      {!isLocked && (
+        <div className="fixed bottom-3 right-3 z-30 flex items-center gap-1 rounded-full border border-white/[0.08] bg-[#0B0F18]/75 px-2 py-1 text-[11px] text-slate-300 shadow-lg backdrop-blur-xl opacity-45 transition-opacity duration-200 hover:opacity-100 focus-within:opacity-100">
+          <button
+            type="button"
+            onClick={() => setExplorerOpen((prev) => !prev)}
+            className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 whitespace-nowrap transition-colors ${
+              explorerOpen ? "bg-white/14 text-white" : "hover:bg-white/[0.08] hover:text-white"
+            }`}
+          >
+            <Folder className="h-3 w-3 text-sky-400" />
+            <span>Files</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveOverlay("memory")}
+            className="flex items-center gap-1.5 rounded-full px-2.5 py-1 whitespace-nowrap transition-colors hover:bg-white/[0.08] hover:text-white"
+          >
+            <History className="h-3 w-3 text-slate-400" />
+            <span>Memory</span>
+            <span className="font-mono text-[10px] text-slate-400 tabular-nums">
+              {memoryEntries.length}/{MEMORY_WINDOW_SIZE}
             </span>
-          </div>
+          </button>
 
-          <nav className="space-y-1">
-            {navItems.map((item) => {
-              const active = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setActiveTab(item.id)}
-                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
-                    active
-                      ? "bg-slate-800/90 text-white"
-                      : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
-                  }`}
-                >
-                  <span className="flex items-center gap-2.5 whitespace-nowrap">
-                    <span className={active ? "text-sky-400" : "text-slate-500"}>{item.icon}</span>
-                    {item.label}
-                  </span>
-                  {item.meta && (
-                    <span className="font-mono text-[11px] text-slate-500 tabular-nums">
-                      {item.meta}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
+          <button
+            type="button"
+            onClick={() => setActiveOverlay("audit")}
+            className="flex items-center gap-1.5 rounded-full px-2.5 py-1 whitespace-nowrap transition-colors hover:bg-white/[0.08] hover:text-white"
+          >
+            <FileText className="h-3 w-3 text-slate-400" />
+            <span>Audit</span>
+          </button>
 
-          <hr className="my-5 border-slate-800" />
+          <button
+            type="button"
+            onClick={() => setActiveOverlay("source")}
+            className="flex items-center gap-1.5 rounded-full px-2.5 py-1 whitespace-nowrap transition-colors hover:bg-white/[0.08] hover:text-white"
+          >
+            <Code2 className="h-3 w-3 text-slate-400" />
+            <span>Windows .exe</span>
+          </button>
 
-          {/* Quick Controls */}
-          <div className="space-y-1">
-            <button
-              type="button"
-              onClick={() => setVaultModalOpen(true)}
-              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:bg-white/[0.04] hover:text-white"
-            >
-              <Shield className="h-4 w-4 text-sky-400" />
-              <span>Security Vault</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setTtsMuted((m) => !m)}
-              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:bg-white/[0.04] hover:text-white"
-            >
-              {ttsMuted ? (
-                <VolumeX className="h-4 w-4 text-slate-500" />
-              ) : (
-                <Volume2 className="h-4 w-4 text-slate-400" />
-              )}
-              <span>{ttsMuted ? "Talk-Back Muted" : "Talk-Back Voice On"}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab("desktop");
-                setIsLocked((prev) => {
-                  const next = !prev;
-                  setOrbState(next ? "locked" : "idle");
-                  if (next) {
-                    appendAudit("security", "lock_workstation", "allowed", "Manual LockWorkStation()");
-                  }
-                  return next;
-                });
-              }}
-              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:bg-white/[0.04] hover:text-white"
-            >
-              <Lock className="h-4 w-4 text-slate-400" />
-              <span>{isLocked ? "Exit Lock Preview" : "Lock Workstation"}</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="border-t border-slate-800 pt-4">
           <button
             type="button"
             onClick={() => downloadWindowsNotchZip()}
-            className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-sky-500 px-3 text-xs font-semibold text-slate-950 whitespace-nowrap transition-colors hover:bg-sky-400"
+            className="flex items-center gap-1.5 rounded-full bg-sky-500/20 px-2.5 py-1 font-medium text-sky-200 whitespace-nowrap transition-colors hover:bg-sky-500/35 hover:text-white"
           >
-            <Download className="h-3.5 w-3.5" />
-            Download Windows .zip
+            <Download className="h-3 w-3" />
+            <span>Download .zip</span>
           </button>
-          <p className="mt-2.5 text-center text-[11px] text-slate-500">
-            Windows 10 &amp; 11 x64 · Modular OS Layer
-          </p>
+
+          <button
+            type="button"
+            onClick={() => setTtsMuted((m) => !m)}
+            title={ttsMuted ? "Unmute talk-back voice" : "Mute talk-back voice"}
+            aria-label={ttsMuted ? "Unmute talk-back voice" : "Mute talk-back voice"}
+            className="flex h-6 w-6 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/[0.08] hover:text-white"
+          >
+            {ttsMuted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+          </button>
         </div>
-      </aside>
+      )}
 
-      {/* Main Content Area */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* Clean 3-Zone Top Bar */}
-        <header className="flex h-14 shrink-0 items-center justify-between gap-8 border-b border-slate-800/90 bg-[#0D1119]/90 px-5">
-          <div className="flex items-center gap-2 text-xs whitespace-nowrap shrink-0">
-            <span className="font-display font-semibold text-white lg:hidden">
-              WindowsNotch Pro
-            </span>
-            <span className="hidden text-slate-500 lg:inline">WindowsNotch Pro</span>
-            <span className="text-slate-600">/</span>
-            <span className="font-medium text-slate-200">{breadcrumbTitle}</span>
-          </div>
-
-          {/* Mobile / Tablet Navigation Links */}
-          <nav className="flex items-center gap-4 text-xs font-medium text-slate-400 lg:hidden">
-            {navItems.map((item) => (
+      {/* Frosted Modal Overlay for Memory, Audit, and Native Windows .exe Source */}
+      {activeOverlay && (
+        <div
+          onClick={() => setActiveOverlay(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4 backdrop-blur-md"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="flex max-h-[86vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-white/14 bg-[#0B0E16]/96 shadow-2xl backdrop-blur-2xl"
+          >
+            <div className="flex items-center justify-between border-b border-white/10 px-5 py-3.5">
+              <h2 className="font-display text-sm font-semibold text-white">{overlayTitle}</h2>
               <button
-                key={item.id}
                 type="button"
-                onClick={() => setActiveTab(item.id)}
-                className={`whitespace-nowrap transition-colors ${
-                  activeTab === item.id ? "text-white" : "hover:text-slate-200"
-                }`}
+                onClick={() => setActiveOverlay(null)}
+                aria-label="Close panel"
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
               >
-                {item.label.split(" ")[0]}
+                <X className="h-4 w-4" />
               </button>
-            ))}
-          </nav>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              {activeOverlay === "memory" && (
+                <MemoryBufferView
+                  summary={memorySummary}
+                  onClearMemory={() => {
+                    setMemoryEntries([]);
+                    setLastResolvedRef("");
+                    appendAudit("memory", "memory_cleared", "info", "Cleared 20-turn sliding window");
+                  }}
+                  onRunPrompt={(prompt) => handleSubmitCommand(prompt)}
+                />
+              )}
 
-          <div className="flex items-center gap-2.5 shrink-0">
-            <button
-              type="button"
-              onClick={() => setVaultModalOpen(true)}
-              className="h-8 rounded-lg border border-slate-700 px-3 text-xs font-medium text-slate-200 whitespace-nowrap transition-colors hover:border-slate-500 hover:text-white"
-            >
-              Security Vault
-            </button>
+              {activeOverlay === "audit" && <AuditLogView events={auditEvents} />}
+
+              {activeOverlay === "source" && <SourceCodeView />}
+            </div>
           </div>
-        </header>
-
-        {/* Active Workspace Viewport */}
-        <main className="flex-1 overflow-y-auto p-5">
-          {activeTab === "desktop" && (
-            <DesktopSimulator
-              assistantName={assistantName}
-              focusedAppId={focusedAppId}
-              onFocusApp={(id) => {
-                setFocusedAppId(id);
-                if (id === "chrome" || id === "edge") {
-                  setNotchExpanded(false);
-                }
-              }}
-              notchExpanded={notchExpanded}
-              activeNotchView={activeNotchView}
-              onChangeNotchView={setActiveNotchView}
-              onToggleNotch={(next) =>
-                setNotchExpanded((prev) => (typeof next === "boolean" ? next : !prev))
-              }
-              orbState={orbState}
-              liveStatus={liveStatus}
-              liveInputTranscript={liveInputTranscript}
-              liveOutputTranscript={liveOutputTranscript}
-              inputValue={inputValue}
-              onInputChange={setInputValue}
-              onSubmitCommand={handleSubmitCommand}
-              onToggleLiveVoice={handleToggleLiveVoice}
-              lastReply={lastReply}
-              lastResolvedRef={lastResolvedRef}
-              lastSources={lastSources}
-              lastError={lastError}
-              retryableError={retryableError}
-              onRetryLastCommand={handleRetryLastCommand}
-              memoryCount={memoryEntries.length}
-              currentTrack={currentTrack}
-              isTrackPlaying={isTrackPlaying}
-              trackProgress={trackProgress}
-              songResults={songResults}
-              onPlayTrack={(track) => {
-                playTrackInNotch(track);
-                setLastReply(`Playing ${track.title} by ${track.artist} in NOVA Media.`);
-                recordToMemory(`Play ${track.title}`, "song_play", `Playing ${track.title}`, "executed", {
-                  target: `${track.title} — ${track.artist}`,
-                });
-              }}
-              onTogglePlayPause={handleTogglePlayPause}
-              onStopTrack={handleStopTrack}
-              onNextTrack={handleNextTrack}
-              onPrevTrack={handlePrevTrack}
-              onSearchSongsDirect={handleSearchSongsDirect}
-              isLocked={isLocked}
-              onLockWorkstation={() => {
-                setIsPatrolling(false);
-                setAirMouseEnabled(false);
-                setIsLocked(true);
-                setOrbState("locked");
-                setActiveNotchView("bento");
-                appendAudit("security", "lock_workstation", "allowed", "LockWorkStation() invoked");
-              }}
-              onAttempt2FAUnlock={handleAttempt2FAUnlock}
-              vault={vault}
-              folders={folders}
-              recycledFolders={recycledFolders}
-              onRestoreRecycled={(id) => {
-                const target = recycledFolders.find((r) => r.id === id);
-                if (!target) return;
-                setRecycledFolders((prev) => prev.filter((r) => r.id !== id));
-                setFolders((prev) => [
-                  {
-                    id: target.id,
-                    name: target.name,
-                    root: target.originalRoot,
-                    createdAt: "Restored",
-                    itemCount: 0,
-                  },
-                  ...prev,
-                ]);
-                appendAudit(
-                  "folder",
-                  "folder_restore",
-                  "allowed",
-                  `Restored ${target.originalRoot}\\${target.name}`
-                );
-              }}
-              apps={apps}
-              onOpenAppWindow={handleOpenAppWindow}
-              onCloseAppWindow={(appId) => {
-                const app = apps.find((a) => a.id === appId);
-                setApps((prev) => prev.map((a) => (a.id === appId ? { ...a, isOpen: false } : a)));
-                setFocusedAppId((prev) => (prev === appId ? null : prev));
-                if (app) {
-                  appendAudit("app", "app_close", "allowed", `Closed ${app.processName} via window`);
-                }
-              }}
-              onAttemptProtectedProcess={handleAttemptProtectedProcess}
-              onNavigateChrome={handleNavigateChrome}
-              cursorPos={cursorPos}
-              clickRipple={clickRipple}
-              isPatrolling={isPatrolling}
-              onToggleKeepAwake={handleToggleKeepAwake}
-              airMouseEnabled={airMouseEnabled}
-              onToggleAirMouse={handleToggleAirMouse}
-              volume={volume}
-              onEmergencyStop={handleEmergencyStop}
-              onTriggerGesture={handleTriggerGesture}
-              onOpenVault={() => setVaultModalOpen(true)}
-            />
-          )}
-
-          {activeTab === "memory" && (
-            <MemoryBufferView
-              summary={memorySummary}
-              onClearMemory={() => {
-                setMemoryEntries([]);
-                setLastResolvedRef("");
-                appendAudit("memory", "memory_cleared", "info", "Cleared 20-turn sliding window");
-              }}
-              onRunPrompt={(prompt) => handleSubmitCommand(prompt)}
-            />
-          )}
-
-          {activeTab === "audit" && <AuditLogView events={auditEvents} />}
-
-          {activeTab === "source" && <SourceCodeView />}
-        </main>
-      </div>
+        </div>
+      )}
 
       {/* In-App Security Vault Dialog */}
       <SecurityVaultModal
