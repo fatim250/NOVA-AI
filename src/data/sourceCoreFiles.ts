@@ -32,6 +32,8 @@ export const SOURCE_CORE_FILES: SourceFileEntry[] = [
   <ItemGroup>
     <!-- Windows Speech Recognition & Text-to-Speech Talk-Back -->
     <PackageReference Include="System.Speech" Version="8.0.0" />
+    <!-- Managed Windows DPAPI fallback when NotchNative.dll is not pre-built -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>

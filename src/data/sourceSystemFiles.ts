@@ -70,20 +70,33 @@ public static class NativeInterop
         uint responseCap,
         out uint outResponseLen);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool LockWorkStation();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetCursorPos(int x, int y);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+    private static volatile bool _managedEmergencyStop;
+
     public static bool MoveMouseSmooth(int x, int y, int durationMs = 360)
     {
+        if (_managedEmergencyStop) return false;
         try
         {
             return notch_mouse_move_smooth(x, y, durationMs) == 0;
         }
         catch (DllNotFoundException)
         {
-            return false;
+            return SetCursorPos(x, y);
         }
     }
 
     public static bool ClickMouse(int button = MouseLeft)
     {
+        if (_managedEmergencyStop) return false;
         try
         {
             return notch_mouse_click(button) == 0;
@@ -96,17 +109,19 @@ public static class NativeInterop
 
     public static void TriggerEmergencyStop()
     {
+        _managedEmergencyStop = true;
         try { notch_mouse_emergency_stop(); } catch (DllNotFoundException) { }
     }
 
     public static void ResetEmergencyStop()
     {
+        _managedEmergencyStop = false;
         try { notch_mouse_reset_stop(); } catch (DllNotFoundException) { }
     }
 
     public static bool IsEmergencyStopped()
     {
-        try { return notch_mouse_is_stopped() != 0; } catch (DllNotFoundException) { return false; }
+        try { return _managedEmergencyStop || notch_mouse_is_stopped() != 0; } catch (DllNotFoundException) { return _managedEmergencyStop; }
     }
 
     public static bool LockWorkstation()
@@ -117,7 +132,7 @@ public static class NativeInterop
         }
         catch (DllNotFoundException)
         {
-            return false;
+            return LockWorkStation();
         }
     }
 
@@ -129,7 +144,15 @@ public static class NativeInterop
         }
         catch (DllNotFoundException)
         {
-            // Gracefully ignored if DLL is absent during design-time preview
+            try
+            {
+                int pref = DwmCornerRound;
+                DwmSetWindowAttribute(hwnd, 33, ref pref, sizeof(int));
+            }
+            catch
+            {
+                // Ignored on Windows 10 where DWMWA_WINDOW_CORNER_PREFERENCE is unsupported
+            }
         }
     }
 
@@ -150,6 +173,10 @@ public static class NativeInterop
             var managed = new byte[cipherLen];
             Marshal.Copy(cipherPtr, managed, 0, (int)cipherLen);
             return managed;
+        }
+        catch (DllNotFoundException)
+        {
+            return ProtectedData.Protect(plaintext, null, DataProtectionScope.CurrentUser);
         }
         finally
         {
@@ -177,6 +204,10 @@ public static class NativeInterop
             var managed = new byte[plainLen];
             Marshal.Copy(plainPtr, managed, 0, (int)plainLen);
             return managed;
+        }
+        catch (DllNotFoundException)
+        {
+            return ProtectedData.Unprotect(cipher, null, DataProtectionScope.CurrentUser);
         }
         finally
         {
@@ -1558,7 +1589,8 @@ if %ERRORLEVEL%==0 (
     cl.exe /nologo /O2 /LD /DNOTCH_NATIVE_EXPORTS native\notch_native.c /Fe:native\NotchNative.dll user32.lib crypt32.lib advapi32.lib
     if errorlevel 1 goto :build_failed
     del /q notch_native.obj native\NotchNative.exp native\NotchNative.lib 2>nul
-    goto :native_ok
+    echo       [OK] native\NotchNative.dll compiled cleanly.
+    goto :native_done
 )
 
 where gcc.exe >nul 2>nul
@@ -1566,22 +1598,24 @@ if %ERRORLEVEL%==0 (
     echo       Detected MinGW-w64 gcc.exe
     gcc.exe -O2 -shared -DNOTCH_NATIVE_EXPORTS -o native\NotchNative.dll native\notch_native.c -luser32 -lcrypt32 -ladvapi32 -lm
     if errorlevel 1 goto :build_failed
-    goto :native_ok
+    echo       [OK] native\NotchNative.dll compiled cleanly.
+    goto :native_done
 )
 
-echo [ERROR] Neither MSVC (cl.exe) nor MinGW-w64 (gcc.exe) was found in PATH.
-echo         Open "x64 Native Tools Command Prompt for VS" or install MinGW-w64, then re-run build.bat.
-exit /b 1
+echo       [INFO] No C compiler (cl.exe / gcc.exe) detected in PATH.
+echo              Continuing build using built-in Win32 P/Invoke fallback.
 
-:native_ok
-echo       [OK] native\NotchNative.dll compiled cleanly.
+:native_done
 
 :: 2. Verify .NET 8 SDK
 echo.
 echo [2/3] Checking .NET 8 SDK ...
 where dotnet >nul 2>nul
 if errorlevel 1 (
-    echo [ERROR] .NET 8 SDK not found. Install from https://dotnet.microsoft.com/download/dotnet/8.0
+    echo [ERROR] .NET 8 SDK not found.
+    echo         Run this command once in PowerShell to install it:
+    echo         winget install Microsoft.DotNet.SDK.8
+    pause
     exit /b 1
 )
 dotnet --version
@@ -1592,19 +1626,23 @@ echo [3/3] Publishing self-contained WindowsNotchPro.exe (win-x64) ...
 dotnet publish WindowsNotchPro.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist
 if errorlevel 1 goto :build_failed
 
-copy /Y native\NotchNative.dll dist\NotchNative.dll >nul
+if exist native\NotchNative.dll (
+    copy /Y native\NotchNative.dll dist\NotchNative.dll >nul
+)
 
 echo.
 echo ================================================================
 echo  BUILD COMPLETE!
 echo  Standalone binary: dist\WindowsNotchPro.exe
-echo  Native Win32 DLL : dist\NotchNative.dll
 echo ================================================================
+echo Launching NOVA / WindowsNotch Pro ...
+start "" "%~dp0dist\WindowsNotchPro.exe"
 exit /b 0
 
 :build_failed
 echo.
 echo [ERROR] Build failed. Inspect compiler messages above.
+pause
 exit /b 1
 `,
   },
