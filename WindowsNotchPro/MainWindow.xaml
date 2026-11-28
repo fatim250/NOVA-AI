@@ -2,48 +2,61 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="NOVA"
-        Width="248"
-        Height="48"
+        Width="288"
+        Height="44"
         WindowStyle="None"
         AllowsTransparency="True"
         Background="Transparent"
         Topmost="True"
         ShowInTaskbar="False"
         ResizeMode="NoResize"
+        AllowDrop="True"
+        DragEnter="Window_DragEnter"
+        Drop="Window_Drop"
         Loaded="Window_Loaded"
         Closing="Window_Closing"
         KeyDown="Window_KeyDown"
         MouseEnter="Window_MouseEnter"
         MouseLeave="Window_MouseLeave">
 
-    <!-- Outer Padding holds subtle glow without clipping -->
     <Grid Margin="6">
         <Border x:Name="NotchShell"
-                CornerRadius="22"
-                Background="{StaticResource GlassSurfaceBrush}"
-                BorderBrush="{StaticResource GlassBorderBrush}"
+                CornerRadius="21"
+                Background="{StaticResource ObsidianSurfaceBrush}"
+                BorderBrush="{StaticResource SpecularShellBorder}"
                 BorderThickness="1"
                 SnapsToDevicePixels="True"
                 ClipToBounds="True">
             <Border.Effect>
-                <DropShadowEffect BlurRadius="22" ShadowDepth="6" Opacity="0.58" Color="#000000" />
+                <DropShadowEffect BlurRadius="28" ShadowDepth="8" Opacity="0.72" Color="#000000" />
             </Border.Effect>
 
             <Grid>
-                <!-- Animated Aurora Ambient Background Glow -->
-                <Border x:Name="AuroraBackdrop" Opacity="0.42" IsHitTestVisible="False">
+                <!-- Ambient Dual-Layer Aurora Mesh -->
+                <Border x:Name="AuroraBackdrop" Opacity="0.32" IsHitTestVisible="False">
                     <Border.Background>
-                        <RadialGradientBrush Center="0.22,0.12" GradientOrigin="0.22,0.12" RadiusX="0.95" RadiusY="1.15">
+                        <RadialGradientBrush Center="0.16,0.08" GradientOrigin="0.16,0.08" RadiusX="0.88" RadiusY="1.1">
                             <GradientStop x:Name="AuroraStopPrimary" Color="#38BDF8" Offset="0.0" />
-                            <GradientStop x:Name="AuroraStopSecondary" Color="#8B5CF6" Offset="0.48" />
-                            <GradientStop Color="#0012141C" Offset="1.0" />
+                            <GradientStop x:Name="AuroraStopSecondary" Color="#8B5CF6" Offset="0.52" />
+                            <GradientStop Color="#0007090F" Offset="1.0" />
                         </RadialGradientBrush>
                     </Border.Background>
                 </Border>
 
-                <!-- 1. COLLAPSED IDLE PILL (248x48) -->
+                <!-- Subtle Top Specular Rim Highlight -->
+                <Border Height="1" VerticalAlignment="Top" IsHitTestVisible="False" Opacity="0.45">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Color="#00FFFFFF" Offset="0.0" />
+                            <GradientStop Color="#88FFFFFF" Offset="0.5" />
+                            <GradientStop Color="#00FFFFFF" Offset="1.0" />
+                        </LinearGradientBrush>
+                    </Border.Background>
+                </Border>
+
+                <!-- ==================== 1. COLLAPSED DYNAMIC PILL ==================== -->
                 <Grid x:Name="CollapsedPillView"
-                      Height="36"
+                      Height="32"
                       Margin="10,0"
                       VerticalAlignment="Center"
                       Cursor="Hand"
@@ -52,237 +65,1067 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <!-- Glowing Optical AI Orb -->
-                    <Grid Grid.Column="0" Width="22" Height="22" VerticalAlignment="Center">
-                        <Ellipse x:Name="CollapsedOrbGlow" Fill="#6638BDF8" Width="22" Height="22">
-                            <Ellipse.Effect>
-                                <BlurEffect Radius="8" />
-                            </Ellipse.Effect>
-                        </Ellipse>
-                        <Ellipse Width="12" Height="12" Stroke="#99FFFFFF" StrokeThickness="1">
-                            <Ellipse.Fill>
-                                <RadialGradientBrush>
-                                    <GradientStop Color="#FFFFFF" Offset="0.0" />
-                                    <GradientStop x:Name="CollapsedOrbCore" Color="#38BDF8" Offset="0.65" />
-                                    <GradientStop Color="#0F172A" Offset="1.0" />
-                                </RadialGradientBrush>
-                            </Ellipse.Fill>
-                        </Ellipse>
+                    <!-- Left: Album Thumbnail (when media active) OR Optical Orb -->
+                    <Grid Grid.Column="0" VerticalAlignment="Center">
+                        <Border x:Name="PillArtworkBorder"
+                                Visibility="Collapsed"
+                                Width="26"
+                                Height="26"
+                                CornerRadius="7"
+                                BorderBrush="#44FFFFFF"
+                                BorderThickness="0.8">
+                            <Border.Background>
+                                <ImageBrush x:Name="PillArtworkBrush" Stretch="UniformToFill" />
+                            </Border.Background>
+                            <Border.Effect>
+                                <DropShadowEffect x:Name="PillArtworkGlow" BlurRadius="12" ShadowDepth="0" Opacity="0.7" Color="#38BDF8" />
+                            </Border.Effect>
+                        </Border>
+
+                        <Grid x:Name="PillOrbHost" Width="20" Height="20" VerticalAlignment="Center">
+                            <Ellipse x:Name="CollapsedOrbGlow" Fill="#6638BDF8" Width="20" Height="20">
+                                <Ellipse.Effect>
+                                    <BlurEffect Radius="7" />
+                                </Ellipse.Effect>
+                            </Ellipse>
+                            <Ellipse Width="10" Height="10" Stroke="#AAFFFFFF" StrokeThickness="1">
+                                <Ellipse.Fill>
+                                    <RadialGradientBrush>
+                                        <GradientStop Color="#FFFFFF" Offset="0.0" />
+                                        <GradientStop x:Name="CollapsedOrbCore" Color="#38BDF8" Offset="0.65" />
+                                        <GradientStop Color="#0F172A" Offset="1.0" />
+                                    </RadialGradientBrush>
+                                </Ellipse.Fill>
+                            </Ellipse>
+                        </Grid>
                     </Grid>
 
+                    <!-- Center: Dynamic Ticker (Live Lyrics when playing, or Track / Focus / Status) -->
                     <TextBlock x:Name="CollapsedStatusText"
                                Grid.Column="1"
                                Margin="9,0,8,0"
                                VerticalAlignment="Center"
-                               Text="NOVA · Armed"
+                               Text="NOVA"
                                Foreground="{StaticResource PrimaryTextBrush}"
                                FontFamily="Segoe UI Variable Text, Segoe UI"
                                FontSize="12"
                                FontWeight="SemiBold"
                                TextTrimming="CharacterEllipsis" />
 
+                    <!-- Right: Animated 4-Bar Equalizer + Micro Badges -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+                        <StackPanel x:Name="PillEqualizer"
+                                    Visibility="Collapsed"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Center"
+                                    Margin="0,0,7,0"
+                                    Height="14">
+                            <Border x:Name="EqBar1" Width="2.5" Height="6" CornerRadius="1.2" Background="#38BDF8" VerticalAlignment="Bottom" Margin="0,0,2,0" />
+                            <Border x:Name="EqBar2" Width="2.5" Height="12" CornerRadius="1.2" Background="#A78BFA" VerticalAlignment="Bottom" Margin="0,0,2,0" />
+                            <Border x:Name="EqBar3" Width="2.5" Height="8" CornerRadius="1.2" Background="#34D399" VerticalAlignment="Bottom" Margin="0,0,2,0" />
+                            <Border x:Name="EqBar4" Width="2.5" Height="10" CornerRadius="1.2" Background="#F472B6" VerticalAlignment="Bottom" />
+                        </StackPanel>
+
+                        <Border x:Name="PillShelfBadge"
+                                Visibility="Collapsed"
+                                Background="#2AA78BFA"
+                                BorderBrush="#4CA78BFA"
+                                BorderThickness="1"
+                                CornerRadius="7"
+                                Padding="5,1"
+                                Margin="0,0,6,0">
+                            <TextBlock x:Name="PillShelfBadgeText" Text="0" Foreground="#EDE9FE" FontSize="9.5" FontWeight="Bold" />
+                        </Border>
+                        <Border Background="#12FFFFFF" CornerRadius="6" Padding="5,1">
+                            <TextBlock x:Name="PillCpuText" Text="0%" Foreground="#94A3B8" FontFamily="Cascadia Mono, Consolas" FontSize="9.5" />
+                        </Border>
+                    </StackPanel>
+
                     <TextBlock x:Name="CollapsedClockText"
-                               Grid.Column="2"
+                               Grid.Column="3"
                                VerticalAlignment="Center"
                                Text="12:00"
-                               Foreground="{StaticResource MutedTextBrush}"
+                               Foreground="{StaticResource SecondaryTextBrush}"
                                FontFamily="Cascadia Mono, Consolas"
-                               FontSize="11" />
+                               FontSize="11"
+                               FontWeight="SemiBold" />
                 </Grid>
 
-                <!-- 2. EXPANDED FROSTED-GLASS BENTO & CONVERSATIONAL AI CARD -->
-                <Grid x:Name="ExpandedCardView" Visibility="Collapsed" Margin="18,14">
+                <!-- Collapsed pill: hairline media progress -->
+                <Border x:Name="PillProgressTrack"
+                        Visibility="Collapsed"
+                        Height="2"
+                        VerticalAlignment="Bottom"
+                        Margin="24,0,24,3"
+                        CornerRadius="1"
+                        Background="#14FFFFFF"
+                        IsHitTestVisible="False">
+                    <Border x:Name="PillProgressFill" HorizontalAlignment="Left" Width="0" CornerRadius="1">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                <GradientStop x:Name="PillProgressStopA" Color="#38BDF8" Offset="0" />
+                                <GradientStop x:Name="PillProgressStopB" Color="#A855F7" Offset="1" />
+                            </LinearGradientBrush>
+                        </Border.Background>
+                    </Border>
+                </Border>
+
+                <!-- ==================== 2. EXPANDED MACOS DYNAMIC ISLAND (720x376 — NO SIDEBAR) ==================== -->
+                <Grid x:Name="ExpandedCardView" Visibility="Collapsed" Margin="18,13,18,15" RenderTransformOrigin="0.5,0">
+                    <Grid.RenderTransform>
+                        <ScaleTransform x:Name="ExpandedScaleTransform" ScaleX="1" ScaleY="1" />
+                    </Grid.RenderTransform>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <!-- Header: Glowing Orb + Name + Aurora Theme Switcher + Voice + Collapse -->
-                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                    <!-- MACOS FLOATING SEGMENTED TOP BAR -->
+                    <Grid Grid.Row="0" Margin="0,0,0,14">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
+                        <!-- Left: Glowing Orb + Brand + Provider Pill -->
                         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                            <Grid Width="24" Height="24" Margin="0,0,10,0">
+                            <Grid Width="24" Height="24" Margin="0,0,8,0" Cursor="Hand" MouseLeftButtonUp="RailOrb_Click" ToolTip="NOVA Overview">
                                 <Ellipse x:Name="ExpandedOrbGlow" Fill="#7738BDF8" Width="24" Height="24">
                                     <Ellipse.Effect>
-                                        <BlurEffect Radius="10" />
+                                        <BlurEffect Radius="9" />
                                     </Ellipse.Effect>
                                 </Ellipse>
-                                <Ellipse Width="13" Height="13" Stroke="#B3FFFFFF" StrokeThickness="1">
+                                <Ellipse Width="13" Height="13" Stroke="#CCFFFFFF" StrokeThickness="1.2">
                                     <Ellipse.Fill>
                                         <RadialGradientBrush>
                                             <GradientStop Color="#FFFFFF" Offset="0.0" />
-                                            <GradientStop x:Name="ExpandedOrbCore" Color="#38BDF8" Offset="0.7" />
-                                            <GradientStop Color="#0F172A" Offset="1.0" />
+                                            <GradientStop x:Name="ExpandedOrbCore" Color="#38BDF8" Offset="0.68" />
+                                            <GradientStop Color="#0B1120" Offset="1.0" />
                                         </RadialGradientBrush>
                                     </Ellipse.Fill>
                                 </Ellipse>
                             </Grid>
-
                             <StackPanel VerticalAlignment="Center">
-                                <TextBlock x:Name="AssistantNameText"
-                                           Text="NOVA"
-                                           Foreground="#FFFFFF"
-                                           FontFamily="Segoe UI Variable Display, Segoe UI"
-                                           FontSize="13.5"
-                                           FontWeight="SemiBold" />
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock x:Name="AssistantNameText"
+                                               Text="NOVA"
+                                               Foreground="#FFFFFF"
+                                               FontFamily="Segoe UI Variable Display, Segoe UI"
+                                               FontSize="13.5"
+                                               FontWeight="Bold" />
+                                    <TextBlock x:Name="StageTitleText"
+                                               Text="· Overview"
+                                               Foreground="{StaticResource MutedTextBrush}"
+                                               FontSize="11.5"
+                                               Margin="5,1,0,0" />
+                                </StackPanel>
                                 <TextBlock x:Name="VoiceStateSubtitle"
-                                           Text="Native Win32 · Ready"
-                                           Foreground="{StaticResource MutedTextBrush}"
-                                           FontSize="10.5" />
+                                           Text="Local Mode"
+                                           Foreground="#7DD3FC"
+                                           FontSize="9.5"
+                                           FontWeight="SemiBold" />
                             </StackPanel>
                         </StackPanel>
 
-                        <!-- Aurora Theme Dots + Mic + Collapse -->
-                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
-                                <Button Style="{StaticResource AuroraDotButtonStyle}" Background="#38BDF8" ToolTip="Aurora Cyan-Violet" Tag="0" Click="ThemeDot_Click" Margin="0,0,5,0" />
-                                <Button Style="{StaticResource AuroraDotButtonStyle}" Background="#EC4899" ToolTip="Rose-Magenta" Tag="1" Click="ThemeDot_Click" Margin="0,0,5,0" />
-                                <Button Style="{StaticResource AuroraDotButtonStyle}" Background="#34D399" ToolTip="Emerald Pulse" Tag="2" Click="ThemeDot_Click" Margin="0,0,5,0" />
-                                <Button Style="{StaticResource AuroraDotButtonStyle}" Background="#F59E0B" ToolTip="Solar Amber" Tag="3" Click="ThemeDot_Click" Margin="0,0,6,0" />
-                                <Button x:Name="AutoAuroraButton"
-                                        Style="{StaticResource NotchIconButtonStyle}"
-                                        Content="Auto"
-                                        Padding="7,2"
-                                        FontSize="10"
-                                        Click="AutoAurora_Click" />
-                            </StackPanel>
-
-                            <Button x:Name="VoiceListenButton"
-                                    Style="{StaticResource NotchIconButtonStyle}"
-                                    Content="Mic"
-                                    Click="VoiceListen_Click"
-                                    Margin="0,0,6,0" />
-
-                            <Button Style="{StaticResource NotchIconButtonStyle}"
-                                    Content="Hide"
-                                    Click="CollapseNotch_Click" />
-                        </StackPanel>
-                    </Grid>
-
-                    <!-- Clean Conversational Prompt Bar -->
-                    <Border Grid.Row="1"
-                            CornerRadius="14"
-                            Background="#24000000"
-                            BorderBrush="#22FFFFFF"
-                            BorderThickness="1"
-                            Padding="12,6"
-                            Margin="0,0,0,12">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-
-                            <TextBox x:Name="CommandInputBox"
-                                     Grid.Column="0"
-                                     Background="Transparent"
-                                     BorderThickness="0"
-                                     Foreground="#FFFFFF"
-                                     CaretBrush="#38BDF8"
-                                     FontFamily="Segoe UI Variable Text, Segoe UI"
-                                     FontSize="13"
-                                     VerticalContentAlignment="Center"
-                                     KeyDown="CommandInputBox_KeyDown" />
-
-                            <TextBlock x:Name="CommandPlaceholder"
-                                       Grid.Column="0"
-                                       Text="Ask Notch AI anything..."
-                                       Foreground="#64748B"
-                                       FontSize="13"
-                                       VerticalAlignment="Center"
-                                       IsHitTestVisible="False" />
-
-                            <Button Grid.Column="1"
-                                    Style="{StaticResource NotchIconButtonStyle}"
-                                    Content="Ask"
-                                    Padding="12,5"
-                                    Background="#2E38BDF8"
-                                    BorderBrush="#5538BDF8"
-                                    Foreground="#FFFFFF"
-                                    Click="SubmitCommand_Click" />
-                        </Grid>
-                    </Border>
-
-                    <!-- Conversational Spoken Reply Panel -->
-                    <Border Grid.Row="2"
-                            CornerRadius="14"
-                            Background="#14FFFFFF"
-                            BorderBrush="#18FFFFFF"
-                            BorderThickness="1"
-                            Padding="13,10"
-                            Margin="0,0,0,12">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto">
-                            <TextBlock x:Name="AssistantReplyText"
-                                       Text="Ready. Ask me to open or close apps, manage Desktop/Documents/Downloads folders, keep your PC awake, or lock your workstation."
-                                       Foreground="#E2E8F0"
-                                       FontFamily="Segoe UI Variable Text, Segoe UI"
-                                       FontSize="12.5"
-                                       LineHeight="19"
-                                       TextWrapping="Wrap" />
-                        </ScrollViewer>
-                    </Border>
-
-                    <!-- Compact Bento Telemetry & Essential Controls (No Cluttered Icon Rows) -->
-                    <Grid Grid.Row="3">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-
-                        <Border Grid.Column="0"
-                                CornerRadius="11"
-                                Background="#12FFFFFF"
-                                Padding="10,6"
-                                Margin="0,0,8,0">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock x:Name="FocusTimerText"
-                                           Text="25:00"
-                                           Foreground="{StaticResource AccentEmeraldBrush}"
-                                           FontFamily="Cascadia Mono, Consolas"
-                                           FontWeight="SemiBold"
-                                           FontSize="12"
-                                           VerticalAlignment="Center"
-                                           Margin="0,0,8,0" />
-                                <Button x:Name="FocusTimerToggleBtn"
-                                        Style="{StaticResource NotchIconButtonStyle}"
-                                        Content="Focus"
-                                        Padding="8,3"
-                                        FontSize="10.5"
-                                        Click="FocusTimerToggle_Click" />
+                        <!-- Center: macOS Floating Glass Icon-Only Segmented Pill -->
+                        <Border Grid.Column="1"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Background="#14FFFFFF"
+                                BorderBrush="#22FFFFFF"
+                                BorderThickness="1"
+                                CornerRadius="14"
+                                Padding="3">
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="TabHomeBtn" Style="{StaticResource MacSegmentedTabStyle}" Tag="Active" ToolTip="Overview" Click="TabButton_Click" CommandParameter="home">
+                                    <Path Data="M3,3 H10 V10 H3 Z M14,3 H21 V10 H14 Z M3,14 H10 V21 H3 Z M14,14 H21 V21 H14 Z"
+                                          Width="14" Height="14" Stretch="Uniform"
+                                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.7" />
+                                </Button>
+                                <Button x:Name="TabAiBtn" Style="{StaticResource MacSegmentedTabStyle}" ToolTip="AI Chat &amp; Live Voice" Click="TabButton_Click" CommandParameter="ai">
+                                    <Path Data="M12,2 L14.5,9.5 L22,12 L14.5,14.5 L12,22 L9.5,14.5 L2,12 L9.5,9.5 Z"
+                                          Width="15" Height="15" Stretch="Uniform"
+                                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.6" />
+                                </Button>
+                                <Button x:Name="TabMediaBtn" Style="{StaticResource MacSegmentedTabStyle}" ToolTip="Media &amp; Audio" Click="TabButton_Click" CommandParameter="media">
+                                    <Path Data="M9,18 V5 L21,3 V16 M9,18 A3,3 0 1 1 6,15 A3,3 0 0 1 9,18 Z M21,16 A3,3 0 1 1 18,13 A3,3 0 0 1 21,16 Z"
+                                          Width="15" Height="15" Stretch="Uniform"
+                                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.6" />
+                                </Button>
+                                <Button x:Name="TabSystemBtn" Style="{StaticResource MacSegmentedTabStyle}" ToolTip="System &amp; Apps" Click="TabButton_Click" CommandParameter="system">
+                                    <Path Data="M2,12 H6 L9,4 L15,20 L18,12 H22"
+                                          Width="16" Height="14" Stretch="Uniform"
+                                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.7" />
+                                </Button>
+                                <Button x:Name="TabShelfBtn" Style="{StaticResource MacSegmentedTabStyle}" ToolTip="Drop Shelf &amp; Clipboard" Click="TabButton_Click" CommandParameter="shelf">
+                                    <Path Data="M3,7 C3,5.9 3.9,5 5,5 H9.5 L11.5,7 H19 C20.1,7 21,7.9 21,9 V17 C21,18.1 20.1,19 19,19 H5 C3.9,19 3,18.1 3,17 Z"
+                                          Width="15" Height="14" Stretch="Uniform"
+                                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.6" />
+                                </Button>
                             </StackPanel>
                         </Border>
 
-                        <Button x:Name="KeepAwakeButton"
-                                Grid.Column="1"
-                                Style="{StaticResource NotchIconButtonStyle}"
-                                Content="Coffee: Off"
-                                Click="KeepAwake_Click"
-                                Margin="0,0,8,0" />
+                        <!-- Right: Siri Live Voice Icon + Settings Gear + Lock + Collapse -->
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button x:Name="VoiceListenButton"
+                                    Style="{StaticResource CircleIconButtonStyle}"
+                                    Width="30" Height="30"
+                                    ToolTip="Start / Stop Gemini Live Voice (Kore)"
+                                    Background="#2434D399"
+                                    BorderBrush="#5534D399"
+                                    Click="VoiceListen_Click"
+                                    Margin="0,0,6,0">
+                                <Path Data="M12,3 A3,3 0 0 1 15,6 V11 A3,3 0 0 1 9,11 V6 A3,3 0 0 1 12,3 Z M6,11 A6,6 0 0 0 18,11 M12,17 V21 M9,21 H15"
+                                      Width="13" Height="14" Stretch="Uniform"
+                                      Stroke="#6EE7B7" StrokeThickness="1.7" />
+                            </Button>
 
-                        <Button x:Name="MuteTtsButton"
-                                Grid.Column="2"
-                                Style="{StaticResource NotchIconButtonStyle}"
-                                Content="Voice: On"
-                                Click="MuteTts_Click"
-                                Margin="0,0,8,0" />
+                            <Button x:Name="TabSettingsBtn"
+                                    Style="{StaticResource CircleIconButtonStyle}"
+                                    Width="28" Height="28"
+                                    ToolTip="Settings"
+                                    Click="TabButton_Click"
+                                    CommandParameter="settings"
+                                    Margin="0,0,5,0">
+                                <Path Data="M12,15 A3,3 0 1 0 12,9 A3,3 0 1 0 12,15 Z M19.4,15 L21,12 L19.4,9 L17,9.5 L15.5,7 L16,4.5 L12,3 L8,4.5 L8.5,7 L7,9.5 L4.6,9 L3,12 L4.6,15 L7,14.5 L8.5,17 L8,19.5 L12,21 L16,19.5 L15.5,17 L17,14.5 Z"
+                                      Width="13" Height="13" Stretch="Uniform"
+                                      Stroke="#CBD5E1" StrokeThickness="1.5" />
+                            </Button>
 
-                        <Button Grid.Column="3"
-                                Style="{StaticResource NotchIconButtonStyle}"
-                                Content="Lock PC"
-                                Background="#26F43F5E"
-                                BorderBrush="#44F43F5E"
-                                Click="LockPc_Click" />
+                            <Button Style="{StaticResource CircleIconButtonStyle}"
+                                    Width="28" Height="28"
+                                    ToolTip="Lock PC"
+                                    Background="#1AF43F5E"
+                                    BorderBrush="#36F43F5E"
+                                    Click="LockPc_Click"
+                                    Margin="0,0,5,0">
+                                <Path Data="M7,11 V8 A5,5 0 0 1 17,8 V11 M5,11 H19 V20 H5 Z"
+                                      Width="11" Height="11" Stretch="Uniform"
+                                      Stroke="#FDA4AF" StrokeThickness="1.7" />
+                            </Button>
+
+                            <Button Style="{StaticResource CircleIconButtonStyle}"
+                                    Width="28" Height="28"
+                                    ToolTip="Collapse (Esc)"
+                                    Click="CollapseNotch_Click">
+                                <Path Data="M6,14 L12,8 L18,14"
+                                      Width="11" Height="11" Stretch="Uniform"
+                                      Stroke="#CBD5E1" StrokeThickness="1.8" />
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- FULL-WIDTH BENTO CONTENT STAGE -->
+                    <Grid Grid.Row="1">
+
+                        <!-- ==================== VIEW 0: HOME BENTO OVERVIEW ==================== -->
+                        <Grid x:Name="ViewHome" Grid.Row="1" Visibility="Visible">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <!-- Quick Spotlight Command Bar -->
+                            <Border Grid.Row="0"
+                                    CornerRadius="13"
+                                    Background="#36000000"
+                                    BorderBrush="#24FFFFFF"
+                                    BorderThickness="1"
+                                    Padding="12,6"
+                                    Margin="0,0,0,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="HomeQuickInputBox"
+                                             Grid.Column="0"
+                                             Background="Transparent"
+                                             BorderThickness="0"
+                                             Foreground="#FFFFFF"
+                                             CaretBrush="#38BDF8"
+                                             FontSize="13"
+                                             VerticalContentAlignment="Center"
+                                             KeyDown="HomeQuickInputBox_KeyDown" />
+                                    <TextBlock x:Name="HomeQuickPlaceholder"
+                                               Grid.Column="0"
+                                               Text="Ask NOVA, launch any app, calculate (= 42*18), or run a command..."
+                                               Foreground="#64748B"
+                                               FontSize="12.5"
+                                               VerticalAlignment="Center"
+                                               IsHitTestVisible="False" />
+                                    <Button x:Name="HomeRunBtn"
+                                            Grid.Column="1"
+                                            Style="{StaticResource NotchAccentButtonStyle}"
+                                            Content="Run"
+                                            Padding="13,4"
+                                            Click="HomeQuickSubmit_Click" />
+                                </Grid>
+                            </Border>
+
+                            <!-- 2x2 Asymmetric Bento Grid -->
+                            <Grid Grid.Row="1" Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1.25*" />
+                                    <ColumnDefinition Width="10" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="1.15*" />
+                                    <RowDefinition Height="10" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <!-- Card A: Mini Now Playing -->
+                                <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource BentoCardStyle}">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="*" />
+                                        </Grid.RowDefinitions>
+                                        <Grid Grid.Row="0">
+                                            <TextBlock Text="NOW PLAYING" Style="{StaticResource MicroLabelStyle}" />
+                                            <TextBlock x:Name="HomeMediaSourceText" Text="IDLE" HorizontalAlignment="Right" Foreground="#7DD3FC" FontSize="9.5" FontWeight="Bold" />
+                                        </Grid>
+                                        <Grid Grid.Row="1" Margin="0,7,0,0" VerticalAlignment="Center">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+
+                                            <!-- Real thumbnail from the playing app (falls back to a glyph tile) -->
+                                            <Border x:Name="HomeArtworkTile"
+                                                    Grid.Column="0" Grid.RowSpan="2"
+                                                    Width="54" Height="54"
+                                                    CornerRadius="12"
+                                                    Margin="0,0,11,0"
+                                                    BorderBrush="#30FFFFFF"
+                                                    BorderThickness="1"
+                                                    VerticalAlignment="Center">
+                                                <Border.Background>
+                                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                        <GradientStop Color="#3338BDF8" Offset="0" />
+                                                        <GradientStop Color="#33A855F7" Offset="1" />
+                                                    </LinearGradientBrush>
+                                                </Border.Background>
+                                                <Border.Effect>
+                                                    <DropShadowEffect BlurRadius="14" ShadowDepth="3" Opacity="0.55" Color="#000000" />
+                                                </Border.Effect>
+                                                <Grid>
+                                                    <Path x:Name="HomeArtworkGlyph" Data="M9,18 V5 L21,3 V16 M9,18 A3,3 0 1 1 6,15 A3,3 0 0 1 9,18 Z M21,16 A3,3 0 1 1 18,13 A3,3 0 0 1 21,16 Z"
+                                                          Width="20" Height="20" Stretch="Uniform" Stroke="#AFC9E8" StrokeThickness="1.6" />
+                                                    <Border x:Name="HomeArtworkImageHost" CornerRadius="11" Visibility="Collapsed">
+                                                        <Border.Background>
+                                                            <ImageBrush x:Name="HomeArtworkBrush" Stretch="UniformToFill" />
+                                                        </Border.Background>
+                                                    </Border>
+                                                </Grid>
+                                            </Border>
+
+                                            <StackPanel Grid.Column="1" Grid.Row="0" VerticalAlignment="Center" Margin="0,0,8,0">
+                                                <TextBlock x:Name="HomeMediaTitleText" Text="Nothing playing" Foreground="#FFFFFF" FontSize="13.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock x:Name="HomeMediaArtistText" Text="Spotify · YouTube · VLC" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,1,0,0" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+
+                                            <StackPanel Grid.Column="2" Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Button Style="{StaticResource CircleIconButtonStyle}" Width="28" Height="28" Click="MediaPrev_Click" Margin="0,0,4,0" ToolTip="Previous">
+                                                    <Path Data="M6,6 V18 M18,6 L9,12 L18,18 Z" Width="10" Height="10" Stretch="Uniform" Fill="#E2E8F0" Stroke="#E2E8F0" StrokeThickness="1.4" />
+                                                </Button>
+                                                <Button Style="{StaticResource CircleIconButtonStyle}" Width="32" Height="32" Background="#3338BDF8" BorderBrush="#6638BDF8" Click="MediaPlayPause_Click" Margin="0,0,4,0" ToolTip="Play / Pause">
+                                                    <Path x:Name="HomePlayPauseIcon" Data="M7,5 L19,12 L7,19 Z" Width="11" Height="11" Stretch="Uniform" Fill="#FFFFFF" />
+                                                </Button>
+                                                <Button Style="{StaticResource CircleIconButtonStyle}" Width="28" Height="28" Click="MediaNext_Click" ToolTip="Next">
+                                                    <Path Data="M18,6 V18 M6,6 L15,12 L6,18 Z" Width="10" Height="10" Stretch="Uniform" Fill="#E2E8F0" Stroke="#E2E8F0" StrokeThickness="1.4" />
+                                                </Button>
+                                            </StackPanel>
+
+                                            <!-- Live progress -->
+                                            <Grid Grid.Column="1" Grid.ColumnSpan="2" Grid.Row="1" Margin="0,7,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock x:Name="HomeMediaElapsedText" Text="0:00" Foreground="#7C8BA1" FontFamily="Cascadia Mono, Consolas" FontSize="9.5" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                                <Border x:Name="HomeProgressTrack" Grid.Column="1" Height="4" CornerRadius="2" Background="#1FFFFFFF" VerticalAlignment="Center"
+                                                        Cursor="Hand" MouseLeftButtonUp="MediaProgress_Click" ToolTip="Click to seek">
+                                                    <Border x:Name="HomeProgressFill" HorizontalAlignment="Left" Width="0" CornerRadius="2">
+                                                        <Border.Background>
+                                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                                                <GradientStop x:Name="HomeProgressStopA" Color="#38BDF8" Offset="0" />
+                                                                <GradientStop x:Name="HomeProgressStopB" Color="#A855F7" Offset="1" />
+                                                            </LinearGradientBrush>
+                                                        </Border.Background>
+                                                    </Border>
+                                                </Border>
+                                                <TextBlock x:Name="HomeMediaDurationText" Grid.Column="2" Text="0:00" Foreground="#7C8BA1" FontFamily="Cascadia Mono, Consolas" FontSize="9.5" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                            </Grid>
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+
+                                <!-- Card B: Live System Vitals -->
+                                <Border Grid.Row="0" Grid.Column="2" Style="{StaticResource BentoCardStyle}" Cursor="Hand" MouseLeftButtonUp="OpenSystemCard_Click">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <Grid Margin="0,0,0,8">
+                                            <TextBlock Text="SYSTEM VITALS" Style="{StaticResource MicroLabelStyle}" />
+                                            <TextBlock x:Name="HomeBatteryText" Text="AC" HorizontalAlignment="Right" Foreground="{StaticResource AccentEmeraldBrush}" FontFamily="Cascadia Mono, Consolas" FontSize="10.5" FontWeight="Bold" />
+                                        </Grid>
+                                        <Grid Margin="0,0,0,6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="36" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="36" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="CPU" Foreground="#94A3B8" FontSize="10.5" VerticalAlignment="Center" />
+                                            <Border Grid.Column="1" Background="#1DFFFFFF" CornerRadius="3" Height="6" VerticalAlignment="Center">
+                                                <Border x:Name="HomeCpuBar" Background="#38BDF8" CornerRadius="3" HorizontalAlignment="Left" Width="12" />
+                                            </Border>
+                                            <TextBlock x:Name="HomeCpuText" Grid.Column="2" Text="0%" HorizontalAlignment="Right" Foreground="#38BDF8" FontFamily="Cascadia Mono, Consolas" FontSize="10.5" FontWeight="SemiBold" />
+                                        </Grid>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="36" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="36" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="RAM" Foreground="#94A3B8" FontSize="10.5" VerticalAlignment="Center" />
+                                            <Border Grid.Column="1" Background="#1DFFFFFF" CornerRadius="3" Height="6" VerticalAlignment="Center">
+                                                <Border x:Name="HomeRamBar" Background="#A78BFA" CornerRadius="3" HorizontalAlignment="Left" Width="20" />
+                                            </Border>
+                                            <TextBlock x:Name="HomeRamText" Grid.Column="2" Text="0%" HorizontalAlignment="Right" Foreground="#A78BFA" FontFamily="Cascadia Mono, Consolas" FontSize="10.5" FontWeight="SemiBold" />
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Card C: Focus Pomodoro & Quick Volume -->
+                                <Border Grid.Row="2" Grid.Column="0" Style="{StaticResource BentoCardStyle}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,14,0">
+                                            <TextBlock Text="FOCUS TIMER" Style="{StaticResource MicroLabelStyle}" />
+                                            <TextBlock x:Name="HomeFocusTimerText" Text="25:00" Foreground="{StaticResource AccentEmeraldBrush}" FontFamily="Cascadia Mono, Consolas" FontSize="22" FontWeight="Bold" Margin="0,2,0,0" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                <Button x:Name="HomeFocusToggleBtn" Style="{StaticResource NotchAccentButtonStyle}" Content="Start" Padding="11,3" FontSize="11" Click="FocusTimerToggle_Click" Margin="0,0,5,0" />
+                                                <Button Style="{StaticResource QuickChipButtonStyle}" Content="Reset" Click="FocusTimerReset_Click" Margin="0,0,5,0" />
+                                                <Button x:Name="QuickKeepAwakeBtn" Style="{StaticResource QuickChipButtonStyle}" Content="Coffee: Off" Click="KeepAwake_Click" />
+                                            </StackPanel>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="32" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="Vol" Foreground="#94A3B8" FontSize="10.5" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                                <Slider x:Name="HomeVolumeSlider" Grid.Column="1" Style="{StaticResource NotchSliderStyle}" Minimum="0" Maximum="100" Value="50" ValueChanged="VolumeSlider_ValueChanged" />
+                                                <TextBlock x:Name="HomeVolumeText" Grid.Column="2" Text="50%" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="#7DD3FC" FontFamily="Cascadia Mono, Consolas" FontSize="10" />
+                                            </Grid>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+
+                                <!-- Card D: Drop Shelf & Clipboard Summary -->
+                                <Border Grid.Row="2" Grid.Column="2" Style="{StaticResource BentoCardStyle}" BorderBrush="#2DA78BFA" Cursor="Hand" MouseLeftButtonUp="OpenShelfCard_Click">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="DROP SHELF &amp; CLIPBOARD" Style="{StaticResource MicroLabelStyle}" Foreground="#C4B5FD" />
+                                        <TextBlock x:Name="HomeShelfSummaryText" Text="0 files held · 0 clips" Foreground="#F8FAFC" FontSize="13" FontWeight="SemiBold" Margin="0,5,0,2" />
+                                        <TextBlock Text="Drag any file onto the notch to stage it" Foreground="#7C8BA1" FontSize="10.5" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+
+                            <!-- Latest Reply Status Strip -->
+                            <Border Grid.Row="2" CornerRadius="10" Background="#12FFFFFF" Padding="10,5">
+                                <TextBlock x:Name="HomeLastReplyText"
+                                           Text="Ready · Press Alt+Space anytime to summon NOVA."
+                                           Foreground="#CBD5E1"
+                                           FontSize="11.5"
+                                           TextTrimming="CharacterEllipsis" />
+                            </Border>
+                        </Grid>
+
+                        <!-- ==================== VIEW 1: UNIFIED LIVE TALKING & CHATTING STUDIO ==================== -->
+                        <Grid x:Name="ViewAi" Grid.Row="1" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="168" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Left Card: Always-Visible Interactive Siri-Style Live Voice Orb -->
+                            <Border x:Name="SiriLiveOverlay"
+                                    Grid.Column="0"
+                                    Style="{StaticResource BentoCardStyle}"
+                                    BorderBrush="#2E38BDF8"
+                                    Padding="12,12"
+                                    Cursor="Hand"
+                                    MouseLeftButtonUp="SiriOrbCard_Click"
+                                    ToolTip="Click orb to start or stop Live Voice conversation">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock x:Name="SiriStatusLabel"
+                                               Grid.Row="0"
+                                               Text="KORE · TAP TO TALK"
+                                               Foreground="#7DD3FC"
+                                               FontSize="9.5"
+                                               FontWeight="Bold"
+                                               HorizontalAlignment="Center" />
+
+                                    <!-- Living Multi-Layer Siri Orb -->
+                                    <Grid Grid.Row="1" Width="114" Height="114" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Ellipse x:Name="SiriOuterHalo" Width="110" Height="110" Opacity="0.45" RenderTransformOrigin="0.5,0.5">
+                                            <Ellipse.RenderTransform>
+                                                <ScaleTransform x:Name="SiriHaloScale" ScaleX="1" ScaleY="1" />
+                                            </Ellipse.RenderTransform>
+                                            <Ellipse.Fill>
+                                                <RadialGradientBrush>
+                                                    <GradientStop Color="#CC38BDF8" Offset="0.0" />
+                                                    <GradientStop Color="#88A855F7" Offset="0.55" />
+                                                    <GradientStop Color="#00080B14" Offset="1.0" />
+                                                </RadialGradientBrush>
+                                            </Ellipse.Fill>
+                                            <Ellipse.Effect>
+                                                <BlurEffect Radius="18" />
+                                            </Ellipse.Effect>
+                                        </Ellipse>
+
+                                        <Ellipse x:Name="SiriSpinRing" Width="80" Height="80" StrokeThickness="3" RenderTransformOrigin="0.5,0.5">
+                                            <Ellipse.RenderTransform>
+                                                <TransformGroup>
+                                                    <RotateTransform x:Name="SiriRingRotate" Angle="0" />
+                                                    <ScaleTransform x:Name="SiriRingScale" ScaleX="1" ScaleY="1" />
+                                                </TransformGroup>
+                                            </Ellipse.RenderTransform>
+                                            <Ellipse.Stroke>
+                                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                    <GradientStop Color="#38BDF8" Offset="0.0" />
+                                                    <GradientStop Color="#EC4899" Offset="0.38" />
+                                                    <GradientStop Color="#A855F7" Offset="0.72" />
+                                                    <GradientStop Color="#34D399" Offset="1.0" />
+                                                </LinearGradientBrush>
+                                            </Ellipse.Stroke>
+                                        </Ellipse>
+
+                                        <Ellipse x:Name="SiriCoreSphere" Width="60" Height="60" RenderTransformOrigin="0.5,0.5">
+                                            <Ellipse.RenderTransform>
+                                                <ScaleTransform x:Name="SiriCoreScale" ScaleX="1" ScaleY="1" />
+                                            </Ellipse.RenderTransform>
+                                            <Ellipse.Fill>
+                                                <RadialGradientBrush GradientOrigin="0.34,0.28">
+                                                    <GradientStop Color="#FFFFFF" Offset="0.0" />
+                                                    <GradientStop Color="#7DD3FC" Offset="0.32" />
+                                                    <GradientStop Color="#8B5CF6" Offset="0.72" />
+                                                    <GradientStop Color="#1E1B4B" Offset="1.0" />
+                                                </RadialGradientBrush>
+                                            </Ellipse.Fill>
+                                            <Ellipse.Effect>
+                                                <DropShadowEffect BlurRadius="18" ShadowDepth="0" Opacity="0.8" Color="#38BDF8" />
+                                            </Ellipse.Effect>
+                                        </Ellipse>
+                                    </Grid>
+
+                                    <StackPanel Grid.Row="2" HorizontalAlignment="Center">
+                                        <TextBlock x:Name="SiriLiveTranscriptText"
+                                                   Text="Live Voice Ready"
+                                                   Foreground="#94A3B8"
+                                                   FontSize="10.5"
+                                                   TextAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Margin="0,0,0,7" />
+                                        <Button x:Name="SiriToggleButton"
+                                                Style="{StaticResource NotchAccentButtonStyle}"
+                                                Content="Start Live Talk"
+                                                Padding="12,4"
+                                                FontSize="10.5"
+                                                Click="VoiceListen_Click" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <!-- Right Card: Live Transcript & Chat Feed + Bottom Input Bar -->
+                            <Grid Grid.Column="2">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <Border x:Name="AiChatCard" Grid.Row="0" Style="{StaticResource BentoCardStyle}" Padding="12,10" Margin="0,0,0,8">
+                                    <ScrollViewer x:Name="ChatScrollViewer" VerticalScrollBarVisibility="Auto">
+                                        <StackPanel x:Name="ChatMessagesPanel">
+                                            <TextBlock Text="Tap the orb on the left to talk live with Gemini Kore, or type below — both share this live conversation."
+                                                       Foreground="#94A3B8" FontSize="12" LineHeight="18" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                </Border>
+
+                                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Button Style="{StaticResource QuickChipButtonStyle}" Content="Screenshot" Tag="take a screenshot" Click="QuickChip_Click" Margin="0,0,5,0" />
+                                    <Button Style="{StaticResource QuickChipButtonStyle}" Content="Stats" Tag="stats" Click="QuickChip_Click" Margin="0,0,5,0" />
+                                    <Button Style="{StaticResource QuickChipButtonStyle}" Content="Play/Pause" Tag="play pause" Click="QuickChip_Click" Margin="0,0,5,0" />
+                                    <Button Style="{StaticResource QuickChipButtonStyle}" Content="Now playing" Tag="what song is playing right now?" Click="QuickChip_Click" Margin="0,0,5,0" />
+                                    <Button Style="{StaticResource QuickChipButtonStyle}" Content="Clear" Click="ClearChat_Click" />
+                                </StackPanel>
+
+                                <Border Grid.Row="2" CornerRadius="14" Background="#3A000000" BorderBrush="#28FFFFFF" BorderThickness="1" Padding="11,5">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="CommandInputBox" Grid.Column="0" Background="Transparent" BorderThickness="0" Foreground="#FFFFFF" CaretBrush="#38BDF8" FontSize="12.5" VerticalContentAlignment="Center" KeyDown="CommandInputBox_KeyDown" />
+                                        <TextBlock x:Name="CommandPlaceholder" Grid.Column="0" Text="Speak live or type a message..." Foreground="#64748B" FontSize="12" VerticalAlignment="Center" IsHitTestVisible="False" />
+                                        <Button x:Name="SendCommandBtn" Grid.Column="1" Style="{StaticResource NotchAccentButtonStyle}" Content="Send" Padding="13,4" Click="SubmitCommand_Click" />
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </Grid>
+
+                        <!-- ==================== VIEW 2: MEDIA & AUDIO HUB ==================== -->
+                        <Grid x:Name="ViewMedia" Grid.Row="1" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="1.2*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Now Playing Card -->
+                            <Border Grid.Column="0" Style="{StaticResource BentoCardStyle}" Padding="0" ClipToBounds="True">
+                                <Grid>
+                                    <!-- Blurred album-art ambience behind the player -->
+                                    <Border x:Name="MediaBackdrop" CornerRadius="16" Opacity="0" IsHitTestVisible="False">
+                                        <Border.Background>
+                                            <ImageBrush x:Name="MediaBackdropBrush" Stretch="UniformToFill" />
+                                        </Border.Background>
+                                        <Border.Effect>
+                                            <BlurEffect Radius="38" KernelType="Gaussian" />
+                                        </Border.Effect>
+                                    </Border>
+                                    <Border CornerRadius="16" IsHitTestVisible="False">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                <GradientStop Color="#5507090F" Offset="0" />
+                                                <GradientStop Color="#CC07090F" Offset="1" />
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                    </Border>
+
+                                    <Grid Margin="16,14">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="*" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <StackPanel Grid.Row="0" Orientation="Horizontal">
+                                            <Border Background="#2438BDF8" BorderBrush="#4038BDF8" BorderThickness="1" CornerRadius="8" Padding="8,2">
+                                                <TextBlock x:Name="MediaSourceBadge" Text="IDLE" Foreground="#7DD3FC" FontSize="9.5" FontWeight="Bold" />
+                                            </Border>
+                                            <TextBlock x:Name="MediaStatusLabel" Text="  Waiting for audio..." Foreground="{StaticResource MutedTextBrush}" FontSize="11" VerticalAlignment="Center" />
+                                        </StackPanel>
+
+                                        <Grid Grid.Row="1" VerticalAlignment="Center" Margin="0,10,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border x:Name="MediaArtworkBorder"
+                                                    Grid.Column="0"
+                                                    Width="96"
+                                                    Height="96"
+                                                    CornerRadius="14"
+                                                    BorderBrush="#33FFFFFF"
+                                                    BorderThickness="1"
+                                                    Margin="0,0,15,0"
+                                                    RenderTransformOrigin="0.5,0.5">
+                                                <Border.RenderTransform>
+                                                    <ScaleTransform x:Name="MediaArtworkScale" ScaleX="1" ScaleY="1" />
+                                                </Border.RenderTransform>
+                                                <Border.Background>
+                                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                        <GradientStop Color="#3338BDF8" Offset="0" />
+                                                        <GradientStop Color="#33A855F7" Offset="1" />
+                                                    </LinearGradientBrush>
+                                                </Border.Background>
+                                                <Border.Effect>
+                                                    <DropShadowEffect x:Name="MediaArtworkGlow" BlurRadius="26" ShadowDepth="4" Opacity="0.6" Color="#000000" />
+                                                </Border.Effect>
+                                                <Grid>
+                                                    <Path x:Name="MediaArtworkGlyph" Data="M9,18 V5 L21,3 V16 M9,18 A3,3 0 1 1 6,15 A3,3 0 0 1 9,18 Z M21,16 A3,3 0 1 1 18,13 A3,3 0 0 1 21,16 Z"
+                                                          Width="34" Height="34" Stretch="Uniform" Stroke="#AFC9E8" StrokeThickness="1.6" />
+                                                    <Border x:Name="MediaArtworkImageHost" CornerRadius="13" Visibility="Collapsed">
+                                                        <Border.Background>
+                                                            <ImageBrush x:Name="MediaArtworkBrush" Stretch="UniformToFill" />
+                                                        </Border.Background>
+                                                    </Border>
+                                                </Grid>
+                                            </Border>
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <TextBlock x:Name="MediaTitleText" Text="Nothing playing" Foreground="#FFFFFF" FontFamily="Segoe UI Variable Display, Segoe UI" FontSize="17" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock x:Name="MediaArtistText" Text="Play Spotify, YouTube, or VLC" Foreground="#CBD5E1" FontSize="12.5" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock x:Name="MediaAlbumText" Text="" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,1,0,0" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock x:Name="MediaLyricPreviewText" Text="" Foreground="#7DD3FC" FontSize="12" FontWeight="SemiBold" Margin="0,8,0,0" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock x:Name="MediaLyricNextText" Text="" Foreground="#5B6B82" FontSize="10.5" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <!-- Seekable timeline -->
+                                        <Grid Grid.Row="2" Margin="0,0,0,10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="MediaElapsedText" Text="0:00" Foreground="#94A3B8" FontFamily="Cascadia Mono, Consolas" FontSize="10" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <Grid Grid.Column="1" Height="14" Background="Transparent" Cursor="Hand" MouseLeftButtonUp="MediaProgress_Click" ToolTip="Click to seek">
+                                                <Border x:Name="MediaProgressTrack" Height="5" CornerRadius="2.5" Background="#22FFFFFF" VerticalAlignment="Center">
+                                                    <Border x:Name="MediaProgressFill" HorizontalAlignment="Left" Width="0" CornerRadius="2.5">
+                                                        <Border.Background>
+                                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                                                <GradientStop x:Name="MediaProgressStopA" Color="#38BDF8" Offset="0" />
+                                                                <GradientStop x:Name="MediaProgressStopB" Color="#A855F7" Offset="1" />
+                                                            </LinearGradientBrush>
+                                                        </Border.Background>
+                                                        <Border.Effect>
+                                                            <DropShadowEffect x:Name="MediaProgressGlow" BlurRadius="8" ShadowDepth="0" Opacity="0.7" Color="#38BDF8" />
+                                                        </Border.Effect>
+                                                    </Border>
+                                                </Border>
+                                            </Grid>
+                                            <TextBlock x:Name="MediaDurationText" Grid.Column="2" Text="0:00" Foreground="#94A3B8" FontFamily="Cascadia Mono, Consolas" FontSize="10" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                        </Grid>
+
+                                        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center">
+                                            <Button Style="{StaticResource CircleIconButtonStyle}" Width="36" Height="36" Click="MediaStop_Click" Margin="0,0,10,0" ToolTip="Stop">
+                                                <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="#CBD5E1" />
+                                            </Button>
+                                            <Button Style="{StaticResource CircleIconButtonStyle}" Width="38" Height="38" Click="MediaPrev_Click" Margin="0,0,10,0" ToolTip="Previous">
+                                                <Path Data="M6,6 V18 M18,6 L9,12 L18,18 Z" Width="13" Height="13" Stretch="Uniform" Fill="#E2E8F0" Stroke="#E2E8F0" StrokeThickness="1.5" />
+                                            </Button>
+                                            <Button x:Name="MediaPlayPauseBtn" Style="{StaticResource CircleIconButtonStyle}" Width="46" Height="46" Background="#4438BDF8" BorderBrush="#8838BDF8" Click="MediaPlayPause_Click" Margin="0,0,10,0" ToolTip="Play / Pause">
+                                                <Path x:Name="MediaPlayPauseIcon" Data="M7,5 L19,12 L7,19 Z" Width="15" Height="15" Stretch="Uniform" Fill="#FFFFFF" />
+                                            </Button>
+                                            <Button Style="{StaticResource CircleIconButtonStyle}" Width="38" Height="38" Click="MediaNext_Click" ToolTip="Next">
+                                                <Path Data="M18,6 V18 M6,6 L15,12 L6,18 Z" Width="13" Height="13" Stretch="Uniform" Fill="#E2E8F0" Stroke="#E2E8F0" StrokeThickness="1.5" />
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+                                </Grid>
+                            </Border>
+
+                            <!-- Volume & Brightness Controls -->
+                            <Border Grid.Column="2" Style="{StaticResource BentoCardStyle}" Padding="16,16">
+                                <StackPanel VerticalAlignment="Center">
+                                    <Grid Margin="0,0,0,6">
+                                        <TextBlock Text="MASTER VOLUME" Style="{StaticResource MicroLabelStyle}" />
+                                        <TextBlock x:Name="VolumeValueText" Text="50%" HorizontalAlignment="Right" Foreground="{StaticResource AccentCyanBrush}" FontFamily="Cascadia Mono, Consolas" FontSize="12" FontWeight="Bold" />
+                                    </Grid>
+                                    <Slider x:Name="VolumeSlider" Style="{StaticResource NotchSliderStyle}" Minimum="0" Maximum="100" Value="50" ValueChanged="VolumeSlider_ValueChanged" Margin="0,0,0,10" />
+                                    <Button x:Name="VolumeMuteBtn" Style="{StaticResource QuickChipButtonStyle}" Content="Mute Audio" HorizontalAlignment="Left" Click="VolumeMute_Click" Margin="0,0,0,20" />
+
+                                    <Grid Margin="0,0,0,6">
+                                        <TextBlock Text="DISPLAY BRIGHTNESS" Style="{StaticResource MicroLabelStyle}" />
+                                        <TextBlock x:Name="BrightnessValueText" Text="75%" HorizontalAlignment="Right" Foreground="{StaticResource AccentAmberBrush}" FontFamily="Cascadia Mono, Consolas" FontSize="12" FontWeight="Bold" />
+                                    </Grid>
+                                    <Slider x:Name="BrightnessSlider" Style="{StaticResource NotchSliderStyle}" Foreground="#FBBF24" Minimum="5" Maximum="100" Value="75" ValueChanged="BrightnessSlider_ValueChanged" />
+                                    <TextBlock Text="DDC/CI external displays &amp; laptop panels" Foreground="#64748B" FontSize="10" Margin="0,6,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <!-- ==================== VIEW 3: SYSTEM TELEMETRY & APPS ==================== -->
+                        <Grid x:Name="ViewSystem" Grid.Row="1" Visibility="Collapsed">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <!-- 3 Telemetry Cards -->
+                            <Grid Grid.Row="0" Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="10" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="10" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <Border Grid.Column="0" Style="{StaticResource BentoCardStyle}" Padding="12,10">
+                                    <StackPanel>
+                                        <Grid>
+                                            <TextBlock Text="CPU LOAD" Style="{StaticResource MicroLabelStyle}" />
+                                            <TextBlock x:Name="SysCpuText" Text="0%" HorizontalAlignment="Right" Foreground="{StaticResource AccentCyanBrush}" FontFamily="Cascadia Mono, Consolas" FontSize="13" FontWeight="Bold" />
+                                        </Grid>
+                                        <Canvas x:Name="CpuSparklineCanvas" Height="28" Margin="0,6,0,0" ClipToBounds="True">
+                                            <Polyline x:Name="CpuSparkline" Stroke="#38BDF8" StrokeThickness="1.8" StrokeLineJoin="Round" />
+                                        </Canvas>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Column="2" Style="{StaticResource BentoCardStyle}" Padding="12,10">
+                                    <StackPanel>
+                                        <Grid>
+                                            <TextBlock Text="MEMORY" Style="{StaticResource MicroLabelStyle}" />
+                                            <TextBlock x:Name="SysRamPctText" Text="0%" HorizontalAlignment="Right" Foreground="{StaticResource AccentVioletBrush}" FontFamily="Cascadia Mono, Consolas" FontSize="13" FontWeight="Bold" />
+                                        </Grid>
+                                        <TextBlock x:Name="SysRamDetailText" Text="0.0 / 0.0 GB" Foreground="#CBD5E1" FontSize="11" Margin="0,4,0,7" />
+                                        <Border Background="#20FFFFFF" CornerRadius="3" Height="6">
+                                            <Border x:Name="SysRamBar" Background="#A78BFA" CornerRadius="3" HorizontalAlignment="Left" Width="30" />
+                                        </Border>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Column="4" Style="{StaticResource BentoCardStyle}" Padding="12,10">
+                                    <StackPanel>
+                                        <Grid>
+                                            <TextBlock Text="POWER &amp; NET" Style="{StaticResource MicroLabelStyle}" />
+                                            <TextBlock x:Name="SysBatteryText" Text="AC" HorizontalAlignment="Right" Foreground="{StaticResource AccentEmeraldBrush}" FontFamily="Cascadia Mono, Consolas" FontSize="12" FontWeight="Bold" />
+                                        </Grid>
+                                        <TextBlock x:Name="SysNetText" Text="↓ 0.0 · ↑ 0.0 Mbps" Foreground="#CBD5E1" FontSize="11" Margin="0,5,0,2" />
+                                        <TextBlock x:Name="SysUptimeText" Text="Up 0h 0m" Foreground="#64748B" FontSize="10" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+
+                            <!-- Running Apps Real-Logo Icon Grid -->
+                            <Border Grid.Row="1" Style="{StaticResource BentoCardStyle}" Padding="12,9" Margin="0,0,0,10">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <Grid Grid.Row="0" Margin="0,0,0,8">
+                                        <TextBlock Text="ACTIVE APPS (CLICK TO SWITCH)" Style="{StaticResource MicroLabelStyle}" VerticalAlignment="Center" />
+                                        <Button Style="{StaticResource QuickChipButtonStyle}" Content="Refresh" HorizontalAlignment="Right" Click="RefreshApps_Click" />
+                                    </Grid>
+                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                        <WrapPanel x:Name="RunningAppsPanel" Orientation="Horizontal" />
+                                    </ScrollViewer>
+                                </Grid>
+                            </Border>
+
+                            <!-- Focus Timer Bar -->
+                            <Grid Grid.Row="2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" CornerRadius="12" Background="#12FFFFFF" Padding="11,5" Margin="0,0,8,0">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock x:Name="FocusTimerText" Text="25:00" Foreground="{StaticResource AccentEmeraldBrush}" FontFamily="Cascadia Mono, Consolas" FontWeight="Bold" FontSize="13.5" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                        <Button x:Name="FocusTimerToggleBtn" Style="{StaticResource NotchAccentButtonStyle}" Content="Start" Padding="10,3" FontSize="10.5" Click="FocusTimerToggle_Click" Margin="0,0,5,0" />
+                                        <Button Style="{StaticResource QuickChipButtonStyle}" Content="Reset" Click="FocusTimerReset_Click" Margin="0,0,8,0" />
+                                        <Button Style="{StaticResource QuickChipButtonStyle}" Content="15m" Tag="15" Click="FocusPreset_Click" Margin="0,0,4,0" />
+                                        <Button Style="{StaticResource QuickChipButtonStyle}" Content="25m" Tag="25" Click="FocusPreset_Click" Margin="0,0,4,0" />
+                                        <Button Style="{StaticResource QuickChipButtonStyle}" Content="45m" Tag="45" Click="FocusPreset_Click" />
+                                    </StackPanel>
+                                </Border>
+                                <Button x:Name="KeepAwakeButton" Grid.Column="1" Style="{StaticResource NotchPillButtonStyle}" Content="Coffee: Off" Click="KeepAwake_Click" />
+                            </Grid>
+                        </Grid>
+
+                        <!-- ==================== VIEW 4: DROP SHELF & CLIPBOARD ==================== -->
+                        <Grid x:Name="ViewShelf" Grid.Row="1" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border Grid.Column="0" Style="{StaticResource BentoCardStyle}" BorderBrush="#33A78BFA">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <Grid Grid.Row="0" Margin="0,0,0,8">
+                                        <TextBlock Text="FILE DROP SHELF" Style="{StaticResource MicroLabelStyle}" Foreground="#C4B5FD" VerticalAlignment="Center" />
+                                        <Button Style="{StaticResource QuickChipButtonStyle}" Content="Clear" HorizontalAlignment="Right" Click="ClearShelf_Click" />
+                                    </Grid>
+
+                                    <!-- Interactive Modern File Upload Drop Zone -->
+                                    <Border Grid.Row="1"
+                                            CornerRadius="12"
+                                            Background="#14A78BFA"
+                                            BorderBrush="#44A78BFA"
+                                            BorderThickness="1"
+                                            Padding="10,9"
+                                            Margin="0,0,0,8"
+                                            Cursor="Hand"
+                                            MouseLeftButtonUp="BrowseShelfFiles_Click">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                            <Path Data="M12,16 V4 M7,9 L12,4 L17,9 M4,17 V19 C4,20.1 4.9,21 6,21 H18 C19.1,21 20,20.1 20,19 V17"
+                                                  Width="15" Height="15" Stretch="Uniform"
+                                                  Stroke="#DDD6FE" StrokeThickness="1.7" Margin="0,0,8,0" />
+                                            <TextBlock Text="Drop files or click to add" Foreground="#EDE9FE" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                                        <WrapPanel x:Name="FileShelfPanel" Orientation="Horizontal" />
+                                    </ScrollViewer>
+                                </Grid>
+                            </Border>
+
+                            <Border Grid.Column="2" Style="{StaticResource BentoCardStyle}">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <Grid Grid.Row="0" Margin="0,0,0,8">
+                                        <TextBlock Text="CLIPBOARD HISTORY" Style="{StaticResource MicroLabelStyle}" Foreground="#7DD3FC" VerticalAlignment="Center" />
+                                        <Button Style="{StaticResource QuickChipButtonStyle}" Content="Clear" HorizontalAlignment="Right" Click="ClearClipboard_Click" />
+                                    </Grid>
+                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                        <StackPanel x:Name="ClipboardHistoryPanel" />
+                                    </ScrollViewer>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- ==================== VIEW 5: SETTINGS ==================== -->
+                        <Grid x:Name="ViewSettings" Grid.Row="1" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="1.1*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- AI Provider Settings -->
+                            <Border Grid.Column="0" Style="{StaticResource BentoCardStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="AI BRAIN · DPAPI SEALED" Style="{StaticResource MicroLabelStyle}" Foreground="#7DD3FC" Margin="0,0,0,10" />
+
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="70" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="Provider" Foreground="#CBD5E1" FontSize="11.5" VerticalAlignment="Center" />
+                                        <ComboBox x:Name="AiProviderCombo" Grid.Column="1" Style="{StaticResource NotchComboBoxStyle}" SelectionChanged="AiProviderCombo_SelectionChanged">
+                                            <ComboBoxItem Content="None" />
+                                            <ComboBoxItem Content="Gemini" />
+                                            <ComboBoxItem Content="OpenAI" />
+                                            <ComboBoxItem Content="Ollama" />
+                                        </ComboBox>
+                                    </Grid>
+
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="70" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="Model" Foreground="#CBD5E1" FontSize="11.5" VerticalAlignment="Center" />
+                                        <TextBox x:Name="AiModelBox" Grid.Column="1" Style="{StaticResource NotchTextBoxStyle}" />
+                                    </Grid>
+
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="70" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="Endpoint" Foreground="#CBD5E1" FontSize="11.5" VerticalAlignment="Center" />
+                                        <TextBox x:Name="AiEndpointBox" Grid.Column="1" Style="{StaticResource NotchTextBoxStyle}" />
+                                    </Grid>
+
+                                    <Grid Margin="0,0,0,7">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="70" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="8" />
+                                            <ColumnDefinition Width="96" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="Live / Voice" Foreground="#CBD5E1" FontSize="11" VerticalAlignment="Center" />
+                                        <TextBox x:Name="GeminiLiveModelBox" Grid.Column="1" Style="{StaticResource NotchTextBoxStyle}" ToolTip="Gemini Live WebSocket model" />
+                                        <ComboBox x:Name="GeminiVoiceCombo" Grid.Column="3" Style="{StaticResource NotchComboBoxStyle}" ToolTip="Gemini Native Voice">
+                                            <ComboBoxItem Content="Kore" />
+                                            <ComboBoxItem Content="Zephyr" />
+                                            <ComboBoxItem Content="Puck" />
+                                            <ComboBoxItem Content="Charon" />
+                                            <ComboBoxItem Content="Fenrir" />
+                                            <ComboBoxItem Content="Aoede" />
+                                        </ComboBox>
+                                    </Grid>
+
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="70" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="API Key" Foreground="#CBD5E1" FontSize="11.5" VerticalAlignment="Center" />
+                                        <PasswordBox x:Name="AiApiKeyBox" Grid.Column="1" Background="#30000000" Foreground="#F8FAFC" BorderBrush="#24FFFFFF" BorderThickness="1" Padding="9,5" />
+                                    </Grid>
+
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Style="{StaticResource NotchAccentButtonStyle}" Content="Save AI Config" Click="SaveAiSettings_Click" Margin="0,0,10,0" />
+                                        <TextBlock x:Name="SettingsSavedStatus" Text="" Foreground="{StaticResource AccentEmeraldBrush}" FontSize="11" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- System & Notch Preferences -->
+                            <Border Grid.Column="2" Style="{StaticResource BentoCardStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="NOTCH PREFERENCES" Style="{StaticResource MicroLabelStyle}" Foreground="#C4B5FD" Margin="0,0,0,10" />
+
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="62" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="Hotkey" Foreground="#CBD5E1" FontSize="11.5" VerticalAlignment="Center" />
+                                        <ComboBox x:Name="HotkeyCombo" Grid.Column="1" Style="{StaticResource NotchComboBoxStyle}" SelectionChanged="HotkeyCombo_SelectionChanged">
+                                            <ComboBoxItem Content="Alt+Space" />
+                                            <ComboBoxItem Content="Ctrl+Space" />
+                                            <ComboBoxItem Content="Ctrl+Shift+Space" />
+                                            <ComboBoxItem Content="Ctrl+Alt+N" />
+                                        </ComboBox>
+                                    </Grid>
+
+                                    <Grid Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="62" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="Display" Foreground="#CBD5E1" FontSize="11.5" VerticalAlignment="Center" />
+                                        <ComboBox x:Name="MonitorCombo" Grid.Column="1" Style="{StaticResource NotchComboBoxStyle}" SelectionChanged="MonitorCombo_SelectionChanged" />
+                                    </Grid>
+
+                                    <CheckBox x:Name="AutoAuroraCheck" Style="{StaticResource NotchToggleSwitchStyle}" Content="Auto Aurora Glow" Click="AutoAuroraCheck_Click" Margin="0,0,0,8" />
+                                    <CheckBox x:Name="StartupCheck" Style="{StaticResource NotchToggleSwitchStyle}" Content="Start with Windows" Click="StartupCheck_Click" Margin="0,0,0,8" />
+                                    <CheckBox x:Name="MousePatrolCheck" Style="{StaticResource NotchToggleSwitchStyle}" Content="Mouse Patrol Awake" Click="MousePatrolCheck_Click" Margin="0,0,0,12" />
+
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Style="{StaticResource QuickChipButtonStyle}" Content="Copy Token" Click="CopyCompanionToken_Click" Margin="0,0,6,0" />
+                                        <Button Style="{StaticResource QuickChipButtonStyle}" Content="Quit NOVA" Background="#22F43F5E" BorderBrush="#40F43F5E" Foreground="#FDA4AF" Click="QuitApp_Click" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
                     </Grid>
                 </Grid>
             </Grid>

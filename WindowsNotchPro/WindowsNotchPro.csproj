@@ -2,18 +2,27 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <!-- Windows 10 SDK target unlocks WinRT APIs (System Media Transport Controls for real now-playing + thumbnails) -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>NOVA</AssemblyName>
     <RootNamespace>WindowsNotchPro</RootNamespace>
-    <Version>2.0.0</Version>
+    <Version>3.1.0</Version>
     <Company>NOVA Systems</Company>
     <Product>NOVA</Product>
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- Bundle compiled native C Win32 engine beside the executable when built -->
