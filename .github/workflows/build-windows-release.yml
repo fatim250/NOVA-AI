@@ -12,7 +12,7 @@ jobs:
   build-win-x64:
     runs-on: windows-latest
     env:
-      RELEASE_NAME: NOVA-v2.0.0-win-x64
+      RELEASE_NAME: NOVA-v3.1.0-win-x64
 
     steps:
       - name: Checkout repository
@@ -72,23 +72,23 @@ jobs:
           Get-ChildItem "$root"
           Compress-Archive -Path "$root" -DestinationPath "$root.zip" -Force
 
-      - name: Upload NOVA-v2.0.0-win-x64.zip Artifact
+      - name: Upload NOVA-v3.1.0-win-x64.zip Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NOVA-v2.0.0-win-x64
-          path: NOVA-v2.0.0-win-x64.zip
+          name: NOVA-v3.1.0-win-x64
+          path: NOVA-v3.1.0-win-x64.zip
 
-      - name: Publish GitHub Release (v2.0.0)
+      - name: Publish GitHub Release (v3.1.0)
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v2.0.0"
+          $tag = "v3.1.0"
           $exists = gh release view $tag 2>$null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag "$env:RELEASE_NAME.zip" --clobber
           } else {
             gh release create $tag "$env:RELEASE_NAME.zip" `
-              --title "NOVA v2.0.0 (Windows x64)" `
+              --title "NOVA v3.1.0 (Windows x64)" `
               --notes "Portable Windows 10 & 11 x64 release containing NOVA.exe, python/, and web/. Extract and double-click NOVA.exe."
           }
